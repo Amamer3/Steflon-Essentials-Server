@@ -199,7 +199,7 @@ export async function getProductAnalytics(req: Request, res: Response): Promise<
   }
 }
 
-export async function getCustomerAnalytics(req: Request, res: Response): Promise<void> {
+export async function getCustomerAnalytics(_req: Request, res: Response): Promise<void> {
   try {
     const usersSnapshot = await db.collection('users').where('role', '==', 'user').get();
     const totalCustomers = usersSnapshot.size;

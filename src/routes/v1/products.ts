@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import { optionalAuth } from '../../middleware/auth';
 import { getProducts, getProductById, getFeaturedProducts, getBestsellerProducts, getCategories } from '../../controllers/productController';
 

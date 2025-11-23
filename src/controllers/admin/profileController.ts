@@ -59,7 +59,7 @@ export async function updateAdminProfile(req: Request, res: Response): Promise<v
   }
 }
 
-export async function changeAdminPassword(req: Request, res: Response): Promise<void> {
+export async function changeAdminPassword(_req: Request, res: Response): Promise<void> {
   try {
     // BetterAuth handles password changes through its own endpoints
     res.json({

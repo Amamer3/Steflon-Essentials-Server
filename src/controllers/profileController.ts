@@ -1,6 +1,5 @@
 import { Request, Response } from 'express';
 import { db } from '../config/firestore';
-import { auth } from '../config/auth';
 
 function convertTimestamp(data: any): any {
   if (!data) return null;
@@ -63,7 +62,7 @@ export async function updateUserProfile(req: Request, res: Response): Promise<vo
 
 export async function changePassword(req: Request, res: Response): Promise<void> {
   try {
-    const userId = req.user!.id;
+
     const { currentPassword, newPassword } = req.body;
 
     if (!currentPassword || !newPassword) {

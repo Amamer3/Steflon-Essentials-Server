@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { db } from '../config/firestore';
-import { Product, ProductFilters, PaginationParams } from '../types';
+import { Product } from '../types';
 
 /**
  * Helper to convert Firestore timestamp to Date
@@ -180,7 +180,7 @@ export async function getBestsellerProducts(req: Request, res: Response): Promis
 /**
  * GET /api/v1/products/categories - Get all categories with product counts
  */
-export async function getCategories(req: Request, res: Response): Promise<void> {
+export async function getCategories(_req: Request, res: Response): Promise<void> {
   try {
     const categoriesSnapshot = await db.collection('categories').get();
     const categories = await Promise.all(

@@ -26,7 +26,7 @@ export async function authenticateUser(
 ): Promise<void> {
   try {
     const user = await getCurrentUser(req);
-    
+
     if (!user) {
       res.status(401).json({ error: 'Unauthorized: Invalid or expired session' });
       return;
@@ -67,7 +67,7 @@ export function requireAdmin(
  */
 export async function optionalAuth(
   req: Request,
-  res: Response,
+  _res: Response,
   next: NextFunction
 ): Promise<void> {
   try {
@@ -79,7 +79,7 @@ export async function optionalAuth(
     // Silently fail for optional auth
     console.debug('Optional auth failed:', error);
   }
-  
+
   next();
 }
 
