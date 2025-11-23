@@ -136,6 +136,25 @@ All authentication endpoints are handled by BetterAuth at `/api/auth/*`.
 ### Health Check
 - `GET /api/health` - Server health check
 
+## Deployment
+
+### Deploy to Render
+
+1. Fork or push this repository to your GitHub account.
+2. Create a new **Web Service** on Render.
+3. Connect your GitHub repository.
+4. Render will automatically detect the `render.yaml` file if you choose "Blueprints", or you can manually configure:
+   - **Build Command**: `npm install && npm run build`
+   - **Start Command**: `npm start`
+5. Add the following **Environment Variables** in the Render dashboard:
+   - `BETTER_AUTH_SECRET`: Your generated secret key
+   - `BETTER_AUTH_URL`: Your Render URL (e.g., `https://your-app.onrender.com`)
+   - `FIREBASE_PROJECT_ID`: Your Firebase project ID
+   - `FIREBASE_CLIENT_EMAIL`: Your Firebase service account email
+   - `FIREBASE_PRIVATE_KEY`: Your Firebase private key (handle newlines correctly)
+
+> **Note**: For `FIREBASE_PRIVATE_KEY` in Render, you might need to replace literal newlines with `\n` or paste the entire key including `-----BEGIN PRIVATE KEY-----` and `-----END PRIVATE KEY-----` exactly as it appears in your JSON file.
+
 ## License
 
 ISC
