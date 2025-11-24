@@ -17,19 +17,26 @@ export const openApiSpec: OpenAPIV3.Document = {
     },
   ],
   tags: [
+    // Public Endpoints
     { name: 'Authentication', description: 'User and admin authentication endpoints' },
-    { name: 'Products', description: 'Product management endpoints' },
-    { name: 'Cart', description: 'Shopping cart endpoints' },
-    { name: 'Wishlist', description: 'Wishlist management endpoints' },
-    { name: 'Orders', description: 'Order management endpoints' },
-    { name: 'Addresses', description: 'Address management endpoints' },
-    { name: 'Profile', description: 'User profile management endpoints' },
-    { name: 'Admin Products', description: 'Admin product management endpoints' },
-    { name: 'Admin Orders', description: 'Admin order management endpoints' },
-    { name: 'Admin Customers', description: 'Admin customer management endpoints' },
-    { name: 'Admin Analytics', description: 'Admin analytics endpoints' },
-    { name: 'Admin Profile', description: 'Admin profile management endpoints' },
-    { name: 'Upload', description: 'File upload endpoints' },
+    { name: 'Products', description: 'Public product catalog endpoints' },
+
+    // User Endpoints
+    { name: 'Cart', description: 'Shopping cart management' },
+    { name: 'Wishlist', description: 'User wishlist management' },
+    { name: 'Orders', description: 'User order history and management' },
+    { name: 'Addresses', description: 'User address book management' },
+    { name: 'Profile', description: 'User profile settings' },
+
+    // Admin Endpoints
+    { name: 'Admin Analytics', description: 'Dashboard and business analytics' },
+    { name: 'Admin Products', description: 'Product inventory management' },
+    { name: 'Admin Orders', description: 'Order processing and management' },
+    { name: 'Admin Customers', description: 'Customer management' },
+    { name: 'Admin Profile', description: 'Admin account settings' },
+
+    // Utility Endpoints
+    { name: 'Upload', description: 'File upload services' },
   ],
   components: {
     securitySchemes: {
@@ -325,6 +332,65 @@ export const openApiSpec: OpenAPIV3.Document = {
         responses: {
           '200': {
             description: 'User profile',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/Success' },
+                    {
+                      type: 'object',
+                      properties: {
+                        data: { $ref: '#/components/schemas/User' },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+          '401': {
+            description: 'Unauthorized',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Error' },
+              },
+            },
+          },
+        },
+      },
+      put: {
+        tags: ['Authentication'],
+        summary: 'Update user profile',
+        description: 'Update authenticated user profile information',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  name: { type: 'string' },
+                  phone: { type: 'string' },
+                  gender: { type: 'string' },
+                  dob: { type: 'string', format: 'date' },
+                  currency: { type: 'string' },
+                  notifications: {
+                    type: 'object',
+                    properties: {
+                      email: { type: 'boolean' },
+                      sms: { type: 'boolean' },
+                      push: { type: 'boolean' },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Profile updated successfully',
             content: {
               'application/json': {
                 schema: {
@@ -1191,42 +1257,7 @@ export const openApiSpec: OpenAPIV3.Document = {
       },
     },
     // Admin endpoints
-    '/admin/auth/me': {
-      get: {
-        tags: ['Authentication'],
-        summary: 'Get current admin',
-        description: 'Get current admin profile information',
-        security: [{ bearerAuth: [] }],
-        responses: {
-          '200': {
-            description: 'Admin profile',
-            content: {
-              'application/json': {
-                schema: {
-                  allOf: [
-                    { $ref: '#/components/schemas/Success' },
-                    {
-                      type: 'object',
-                      properties: {
-                        data: { $ref: '#/components/schemas/User' },
-                      },
-                    },
-                  ],
-                },
-              },
-            },
-          },
-          '403': {
-            description: 'Forbidden - Admin access required',
-            content: {
-              'application/json': {
-                schema: { $ref: '#/components/schemas/Error' },
-              },
-            },
-          },
-        },
-      },
-    },
+
     '/admin/products': {
       get: {
         tags: ['Admin Products'],
@@ -1468,6 +1499,645 @@ export const openApiSpec: OpenAPIV3.Document = {
         responses: {
           '200': {
             description: 'Image uploaded',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Success' },
+              },
+            },
+          },
+        },
+      },
+    },
+    // Admin Authentication
+    '/admin/auth/sign-in': {
+      post: {
+        tags: ['Admin Authentication'],
+        summary: 'Admin login',
+        description: 'Authenticate admin user',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['email', 'password'],
+                properties: {
+                  email: { type: 'string', format: 'email' },
+                  password: { type: 'string' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Login successful',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Success' },
+              },
+            },
+          },
+        },
+      },
+    },
+    '/admin/auth/me': {
+      get: {
+        tags: ['Admin Authentication'],
+        summary: 'Get current admin',
+        description: 'Get authenticated admin profile',
+        security: [{ bearerAuth: [] }],
+        responses: {
+          '200': {
+            description: 'Admin profile',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/Success' },
+                    {
+                      type: 'object',
+                      properties: {
+                        data: { $ref: '#/components/schemas/User' },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    '/admin/auth/create-admin': {
+      post: {
+        tags: ['Admin Authentication'],
+        summary: 'Create new admin user',
+        description: 'Create a new admin user account. For initial setup, this can be called without authentication. In production, should be protected to only allow existing admins.',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['email', 'password'],
+                properties: {
+                  email: { type: 'string', format: 'email' },
+                  password: { type: 'string', minLength: 8 },
+                  name: { type: 'string' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '201': {
+            description: 'Admin user created successfully',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/Success' },
+                    {
+                      type: 'object',
+                      properties: {
+                        message: { type: 'string' },
+                        data: { $ref: '#/components/schemas/User' },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+          '400': {
+            description: 'Validation error',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Error' },
+              },
+            },
+          },
+          '409': {
+            description: 'User already exists',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Error' },
+              },
+            },
+          },
+        },
+      },
+    },
+
+    // Admin Dashboard
+    '/admin/dashboard/stats': {
+      get: {
+        tags: ['Admin Dashboard'],
+        summary: 'Get dashboard statistics',
+        description: 'Get key performance indicators for the dashboard',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'timeRange', in: 'query', schema: { type: 'string', enum: ['7days', '30days', '90days', '1year', 'all'], default: '30days' } },
+        ],
+        responses: {
+          '200': {
+            description: 'Dashboard statistics',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Success' },
+              },
+            },
+          },
+        },
+      },
+    },
+    '/admin/dashboard/recent-orders': {
+      get: {
+        tags: ['Admin Dashboard'],
+        summary: 'Get recent orders',
+        description: 'Get a list of the most recent orders',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'limit', in: 'query', schema: { type: 'integer', default: 10 } },
+        ],
+        responses: {
+          '200': {
+            description: 'Recent orders',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Success' },
+              },
+            },
+          },
+        },
+      },
+    },
+    // Admin Customers
+    '/admin/customers': {
+      get: {
+        tags: ['Admin Customers'],
+        summary: 'Get all customers',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'page', in: 'query', schema: { type: 'integer', default: 1 } },
+          { name: 'limit', in: 'query', schema: { type: 'integer', default: 20 } },
+          { name: 'search', in: 'query', schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': {
+            description: 'List of customers',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Success' },
+              },
+            },
+          },
+        },
+      },
+    },
+    '/admin/customers/{id}': {
+      get: {
+        tags: ['Admin Customers'],
+        summary: 'Get single customer',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': {
+            description: 'Customer details',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Success' },
+              },
+            },
+          },
+        },
+      },
+    },
+
+    // Admin Coupons
+    '/admin/coupons': {
+      get: {
+        tags: ['Admin Coupons'],
+        summary: 'Get all coupons',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'page', in: 'query', schema: { type: 'integer', default: 1 } },
+          { name: 'limit', in: 'query', schema: { type: 'integer', default: 20 } },
+          { name: 'status', in: 'query', schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': {
+            description: 'List of coupons',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Success' },
+              },
+            },
+          },
+        },
+      },
+      post: {
+        tags: ['Admin Coupons'],
+        summary: 'Create coupon',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['code', 'type', 'value', 'validFrom', 'validUntil'],
+                properties: {
+                  code: { type: 'string' },
+                  name: { type: 'string' },
+                  type: { type: 'string', enum: ['percentage', 'fixed'] },
+                  value: { type: 'number' },
+                  minPurchase: { type: 'number' },
+                  maxDiscount: { type: 'number' },
+                  usageLimit: { type: 'number' },
+                  validFrom: { type: 'string', format: 'date-time' },
+                  validUntil: { type: 'string', format: 'date-time' },
+                  status: { type: 'string', enum: ['active', 'inactive'] },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '201': {
+            description: 'Coupon created',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Success' },
+              },
+            },
+          },
+        },
+      },
+    },
+    '/admin/coupons/{id}': {
+      get: {
+        tags: ['Admin Coupons'],
+        summary: 'Get single coupon',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': {
+            description: 'Coupon details',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Success' },
+              },
+            },
+          },
+        },
+      },
+      put: {
+        tags: ['Admin Coupons'],
+        summary: 'Update coupon',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  code: { type: 'string' },
+                  name: { type: 'string' },
+                  type: { type: 'string' },
+                  value: { type: 'number' },
+                  status: { type: 'string' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Coupon updated',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Success' },
+              },
+            },
+          },
+        },
+      },
+      delete: {
+        tags: ['Admin Coupons'],
+        summary: 'Delete coupon',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': {
+            description: 'Coupon deleted',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Success' },
+              },
+            },
+          },
+        },
+      },
+    },
+
+    // Admin Notifications
+    '/admin/notifications': {
+      get: {
+        tags: ['Admin Notifications'],
+        summary: 'Get all notifications',
+        security: [{ bearerAuth: [] }],
+        responses: {
+          '200': {
+            description: 'List of notifications',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Success' },
+              },
+            },
+          },
+        },
+      },
+      post: {
+        tags: ['Admin Notifications'],
+        summary: 'Create notification',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['title', 'message', 'type', 'target'],
+                properties: {
+                  title: { type: 'string' },
+                  message: { type: 'string' },
+                  type: { type: 'string', enum: ['info', 'success', 'warning', 'error', 'promotional'] },
+                  target: { type: 'string', enum: ['all', 'user', 'group'] },
+                  recipients: { type: 'array', items: { type: 'string' } },
+                  scheduledAt: { type: 'string', format: 'date-time' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '201': {
+            description: 'Notification created',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Success' },
+              },
+            },
+          },
+        },
+      },
+    },
+    '/admin/notifications/{id}': {
+      get: {
+        tags: ['Admin Notifications'],
+        summary: 'Get single notification',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': {
+            description: 'Notification details',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Success' },
+              },
+            },
+          },
+        },
+      },
+      put: {
+        tags: ['Admin Notifications'],
+        summary: 'Update notification',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  title: { type: 'string' },
+                  message: { type: 'string' },
+                  status: { type: 'string' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Notification updated',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Success' },
+              },
+            },
+          },
+        },
+      },
+      delete: {
+        tags: ['Admin Notifications'],
+        summary: 'Delete notification',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': {
+            description: 'Notification deleted',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Success' },
+              },
+            },
+          },
+        },
+      },
+    },
+    '/admin/notifications/{id}/send': {
+      post: {
+        tags: ['Admin Notifications'],
+        summary: 'Send notification',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': {
+            description: 'Notification sent',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Success' },
+              },
+            },
+          },
+        },
+      },
+    },
+    // Admin Analytics
+    '/admin/analytics/revenue': {
+      get: {
+        tags: ['Admin Analytics'],
+        summary: 'Get revenue analytics',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'timeRange', in: 'query', schema: { type: 'string', enum: ['7days', '30days', '90days', '1year', 'all'], default: '30days' } },
+          { name: 'groupBy', in: 'query', schema: { type: 'string', enum: ['day', 'week', 'month'], default: 'day' } },
+        ],
+        responses: {
+          '200': {
+            description: 'Revenue analytics',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Success' },
+              },
+            },
+          },
+        },
+      },
+    },
+    '/admin/analytics/orders': {
+      get: {
+        tags: ['Admin Analytics'],
+        summary: 'Get order analytics',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'timeRange', in: 'query', schema: { type: 'string', enum: ['7days', '30days', '90days', '1year', 'all'], default: '30days' } },
+        ],
+        responses: {
+          '200': {
+            description: 'Order analytics',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Success' },
+              },
+            },
+          },
+        },
+      },
+    },
+    '/admin/analytics/products': {
+      get: {
+        tags: ['Admin Analytics'],
+        summary: 'Get product analytics',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'limit', in: 'query', schema: { type: 'integer', default: 10 } },
+        ],
+        responses: {
+          '200': {
+            description: 'Product analytics',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Success' },
+              },
+            },
+          },
+        },
+      },
+    },
+    '/admin/analytics/customers': {
+      get: {
+        tags: ['Admin Analytics'],
+        summary: 'Get customer analytics',
+        security: [{ bearerAuth: [] }],
+        responses: {
+          '200': {
+            description: 'Customer analytics',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Success' },
+              },
+            },
+          },
+        },
+      },
+    },
+    // Admin Profile
+    '/admin/profile': {
+      get: {
+        tags: ['Admin Profile'],
+        summary: 'Get admin profile',
+        security: [{ bearerAuth: [] }],
+        responses: {
+          '200': {
+            description: 'Admin profile',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Success' },
+              },
+            },
+          },
+        },
+      },
+      put: {
+        tags: ['Admin Profile'],
+        summary: 'Update admin profile',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/User' },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Profile updated',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Success' },
+              },
+            },
+          },
+        },
+      },
+    },
+    '/admin/profile/change-password': {
+      put: {
+        tags: ['Admin Profile'],
+        summary: 'Change admin password',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['currentPassword', 'newPassword'],
+                properties: {
+                  currentPassword: { type: 'string' },
+                  newPassword: { type: 'string', minLength: 8 },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Password changed',
             content: {
               'application/json': {
                 schema: { $ref: '#/components/schemas/Success' },

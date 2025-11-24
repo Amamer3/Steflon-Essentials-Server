@@ -119,7 +119,10 @@ export async function updateCustomerStatus(req: Request, res: Response): Promise
 export async function deleteCustomer(req: Request, res: Response): Promise<void> {
   try {
     const { id } = req.params;
-    await db.collection('users').doc(id).delete();
+    await db.collection('users').doc(id).update({
+      status: 'Deleted',
+      updatedAt: new Date(),
+    });
     res.json({ success: true, message: 'Customer deleted' });
   } catch (error) {
     console.error('Error deleting customer:', error);

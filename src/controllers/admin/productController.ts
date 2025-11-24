@@ -129,7 +129,10 @@ export async function updateProduct(req: Request, res: Response): Promise<void> 
 export async function deleteProduct(req: Request, res: Response): Promise<void> {
   try {
     const { id } = req.params;
-    await db.collection('products').doc(id).delete();
+    await db.collection('products').doc(id).update({
+      status: 'Deleted',
+      updatedAt: new Date(),
+    });
     res.json({ success: true, message: 'Product deleted' });
   } catch (error) {
     console.error('Error deleting product:', error);

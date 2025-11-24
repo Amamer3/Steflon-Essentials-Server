@@ -38,43 +38,101 @@ function getDateRange(timeRange: string): { start: Date; end: Date } {
   return { start, end };
 }
 
+function getPreviousDateRange(start: Date, end: Date): { prevStart: Date; prevEnd: Date } {
+  const duration = end.getTime() - start.getTime();
+  const prevEnd = new Date(start.getTime());
+  const prevStart = new Date(start.getTime() - duration);
+  return { prevStart, prevEnd };
+}
+
 export async function getDashboardStats(req: Request, res: Response): Promise<void> {
   try {
     const { timeRange = '30days' } = req.query;
     const { start, end } = getDateRange(timeRange as string);
+    const { prevStart, prevEnd } = getPreviousDateRange(start, end);
 
-    // Get orders in date range
+    // Current period orders
     const ordersSnapshot = await db
       .collection('orders')
       .where('createdAt', '>=', start)
       .where('createdAt', '<=', end)
       .get();
-
     const orders = ordersSnapshot.docs.map((doc: any) => convertTimestamp(doc.data()));
 
-    // Calculate stats
-    const totalRevenue = orders.reduce((sum: number, order: any) => sum + (order.total || 0), 0);
+    // Previous period orders
+    const prevOrdersSnapshot = await db
+      .collection('orders')
+      .where('createdAt', '>=', prevStart)
+      .where('createdAt', '<=', prevEnd)
+      .get();
+    const prevOrders = prevOrdersSnapshot.docs.map((doc: any) => convertTimestamp(doc.data()));
+
+    // Current stats
+    const revenue = orders.reduce((sum: number, order: any) => sum + (order.total || 0), 0);
     const totalOrders = orders.length;
     const totalCustomers = new Set(orders.map((o: any) => o.userId)).size;
-    const averageOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
 
-    // Get product count
+    // Previous stats
+    const prevRevenue = prevOrders.reduce((sum: number, order: any) => sum + (order.total || 0), 0);
+    const prevTotalOrders = prevOrders.length;
+    const prevTotalCustomers = new Set(prevOrders.map((o: any) => o.userId)).size;
+
+    // Calculate changes
+    const calculateChange = (current: number, prev: number) => {
+      if (prev === 0) return current > 0 ? 100 : 0;
+      return ((current - prev) / prev) * 100;
+    };
+
+    const revenueChange = calculateChange(revenue, prevRevenue);
+    const ordersChange = calculateChange(totalOrders, prevTotalOrders);
+    const customersChange = calculateChange(totalCustomers, prevTotalCustomers);
+
+    // Total products (current only)
     const productsSnapshot = await db.collection('products').where('status', '==', 'Active').get();
     const totalProducts = productsSnapshot.size;
+    // For products change, we'd need historical data which we don't track easily here. 
+    // We'll return 0 or estimate based on createdAt if needed, but for now 0.
+    const productsChange = 0;
 
     res.json({
       success: true,
       data: {
-        totalRevenue,
         totalOrders,
         totalCustomers,
         totalProducts,
-        averageOrderValue,
+        revenue,
+        ordersChange,
+        customersChange,
+        productsChange,
+        revenueChange,
         timeRange,
       },
     });
   } catch (error) {
     console.error('Error getting dashboard stats:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+export async function getRecentOrders(req: Request, res: Response): Promise<void> {
+  try {
+    const { limit = '10' } = req.query;
+    const limitNum = parseInt(limit as string, 10);
+
+    const snapshot = await db
+      .collection('orders')
+      .orderBy('createdAt', 'desc')
+      .limit(limitNum)
+      .get();
+
+    const orders = snapshot.docs.map((doc: any) => ({
+      id: doc.id,
+      ...convertTimestamp(doc.data()),
+    }));
+
+    res.json({ success: true, data: { orders } });
+  } catch (error) {
+    console.error('Error getting recent orders:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 }

@@ -8,11 +8,13 @@ const router = Router();
 router.use(authenticateUser);
 router.use(requireAdmin);
 
+import { upload } from '../../middleware/upload';
+
 // POST /api/v1/upload/product-image - Upload single product image
-router.post('/product-image', uploadProductImage);
+router.post('/product-image', upload.single('file'), uploadProductImage);
 
 // POST /api/v1/upload/product-images - Upload multiple product images
-router.post('/product-images', uploadProductImages);
+router.post('/product-images', upload.array('files', 5), uploadProductImages);
 
 export default router;
 

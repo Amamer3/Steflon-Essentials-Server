@@ -55,21 +55,16 @@ export async function getProducts(req: Request, res: Response): Promise<void> {
       query = query.where('price', '<=', parseFloat(maxPrice as string));
     }
 
-    // Get total count
-    const countSnapshot = await query.get();
-    const total = countSnapshot.size;
-
-    // Apply pagination and sorting
-    query = query.orderBy(sort as string, order as 'asc' | 'desc');
-    query = query.limit(limitNum).offset(skip);
-
+    // Get all matching documents without sorting/limiting in Firestore to avoid composite index requirements
     const snapshot = await query.get();
+
+
     let products = snapshot.docs.map((doc: any) => ({
       id: doc.id,
       ...convertTimestamp(doc.data()),
     })) as Product[];
 
-    // Apply search filter (client-side for Firestore limitations)
+    // Apply search filter (client-side)
     if (search) {
       const searchLower = (search as string).toLowerCase();
       products = products.filter(
@@ -80,14 +75,39 @@ export async function getProducts(req: Request, res: Response): Promise<void> {
       );
     }
 
+    // Sort in memory
+    products.sort((a: any, b: any) => {
+      let valA = a[sort as string];
+      let valB = b[sort as string];
+
+      // Handle dates
+      if (sort === 'createdAt' || sort === 'updatedAt') {
+        valA = valA instanceof Date ? valA.getTime() : new Date(valA).getTime();
+        valB = valB instanceof Date ? valB.getTime() : new Date(valB).getTime();
+      }
+
+      // Handle strings (case insensitive)
+      if (typeof valA === 'string' && typeof valB === 'string') {
+        valA = valA.toLowerCase();
+        valB = valB.toLowerCase();
+      }
+
+      if (valA < valB) return order === 'asc' ? -1 : 1;
+      if (valA > valB) return order === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    // Apply pagination in memory
+    const paginatedProducts = products.slice(skip, skip + limitNum);
+
     res.json({
       success: true,
-      data: products,
+      data: paginatedProducts,
       pagination: {
         page: pageNum,
         limit: limitNum,
-        total,
-        totalPages: Math.ceil(total / limitNum),
+        total: products.length, // Total after search filter
+        totalPages: Math.ceil(products.length / limitNum),
       },
     });
   } catch (error) {
@@ -129,23 +149,38 @@ export async function getFeaturedProducts(req: Request, res: Response): Promise<
     const { limit = '12' } = req.query;
     const limitNum = parseInt(limit as string, 10);
 
+    // Note: Removed orderBy('createdAt', 'desc') to avoid needing a composite index
+    // Fetching all featured products and sorting in memory
     const snapshot = await db
       .collection('products')
       .where('featured', '==', true)
       .where('status', '==', 'Active')
-      .orderBy('createdAt', 'desc')
-      .limit(limitNum)
       .get();
 
-    const products = snapshot.docs.map((doc: any) => ({
+    let products = snapshot.docs.map((doc: any) => ({
       id: doc.id,
       ...convertTimestamp(doc.data()),
     })) as Product[];
 
+    // Sort in memory by createdAt desc
+    products.sort((a, b) => {
+      const dateA = a.createdAt instanceof Date ? a.createdAt.getTime() : new Date(a.createdAt).getTime();
+      const dateB = b.createdAt instanceof Date ? b.createdAt.getTime() : new Date(b.createdAt).getTime();
+      return dateB - dateA;
+    });
+
+    // Apply limit
+    if (limitNum > 0) {
+      products = products.slice(0, limitNum);
+    }
+
     res.json({ success: true, data: products });
   } catch (error) {
     console.error('Error getting featured products:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({
+      error: 'Internal server error',
+      details: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : String(error)) : undefined
+    });
   }
 }
 
@@ -157,23 +192,38 @@ export async function getBestsellerProducts(req: Request, res: Response): Promis
     const { limit = '12' } = req.query;
     const limitNum = parseInt(limit as string, 10);
 
+    // Note: Removed orderBy('createdAt', 'desc') to avoid needing a composite index
+    // Fetching all bestseller products and sorting in memory
     const snapshot = await db
       .collection('products')
       .where('bestseller', '==', true)
       .where('status', '==', 'Active')
-      .orderBy('createdAt', 'desc')
-      .limit(limitNum)
       .get();
 
-    const products = snapshot.docs.map((doc: any) => ({
+    let products = snapshot.docs.map((doc: any) => ({
       id: doc.id,
       ...convertTimestamp(doc.data()),
     })) as Product[];
 
+    // Sort in memory by createdAt desc
+    products.sort((a, b) => {
+      const dateA = a.createdAt instanceof Date ? a.createdAt.getTime() : new Date(a.createdAt).getTime();
+      const dateB = b.createdAt instanceof Date ? b.createdAt.getTime() : new Date(b.createdAt).getTime();
+      return dateB - dateA;
+    });
+
+    // Apply limit
+    if (limitNum > 0) {
+      products = products.slice(0, limitNum);
+    }
+
     res.json({ success: true, data: products });
   } catch (error) {
     console.error('Error getting bestseller products:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({
+      error: 'Internal server error',
+      details: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : String(error)) : undefined
+    });
   }
 }
 

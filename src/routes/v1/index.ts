@@ -14,10 +14,10 @@ const router = Router();
 
 // Test route to verify v1 routes are working
 router.get('/test', (req, res) => {
-  res.json({ 
-    success: true, 
-    message: 'V1 routes are working!', 
-    path: req.path, 
+  res.json({
+    success: true,
+    message: 'V1 routes are working!',
+    path: req.path,
     originalUrl: req.originalUrl,
     baseUrl: req.baseUrl,
     url: req.url
@@ -42,30 +42,30 @@ router.use((req, _res, next) => {
 async function handleBetterAuth(req: ExpressRequest, res: Response, authPath: string): Promise<void> {
   try {
     console.log('🔄 handleBetterAuth called with path:', authPath);
-    
+
     // Safely construct URL - validate host header to prevent host header injection
     const host = req.headers.host || 'localhost:3000';
     // Only allow alphanumeric, dots, colons, and hyphens in host
     if (!/^[a-zA-Z0-9.:-]+$/.test(host)) {
       console.error('❌ Invalid host header:', host);
-      res.status(400).json({ error: 'Invalid host header' }); 
+      res.status(400).json({ error: 'Invalid host header' });
       return;
     }
-    
-    
+
+
     // BetterAuth expects requests at /api/auth/* by default
     // The handler needs the full URL matching the baseURL
     const baseUrl = `http://${host}`;
     const fullPath = `/api/auth${authPath}`;
     const url = new URL(fullPath, baseUrl);
-    console.log('🔄 Forwarding to BetterAuth:', { 
-      fullPath, 
-      url: url.toString(), 
+    console.log('🔄 Forwarding to BetterAuth:', {
+      fullPath,
+      url: url.toString(),
       urlPathname: url.pathname,
       host,
       baseURL: 'http://localhost:5000' // BetterAuth's configured baseURL
     });
-    
+
     const headers = new Headers();
     Object.entries(req.headers).forEach(([key, value]) => {
       // Skip host header as it might conflict with the URL
@@ -76,7 +76,7 @@ async function handleBetterAuth(req: ExpressRequest, res: Response, authPath: st
         headers.set(key, value.join(', '));
       }
     });
-    
+
     // Use global Request constructor (Web API Request, not Express Request)
     const WebAPIRequest = (globalThis as any).Request;
     if (!WebAPIRequest) {
@@ -84,7 +84,7 @@ async function handleBetterAuth(req: ExpressRequest, res: Response, authPath: st
       res.status(500).json({ error: 'Request constructor not available' });
       return;
     }
-    
+
     // Create request with full URL - BetterAuth will parse it
     // Try using the full URL first, as BetterAuth might need it to match baseURL
     const requestUrl = url.toString();
@@ -101,16 +101,16 @@ async function handleBetterAuth(req: ExpressRequest, res: Response, authPath: st
       urlPathname: new URL(webReq.url).pathname,
       headers: Object.fromEntries(webReq.headers.entries())
     });
-    
+
     const webRes = await auth.handler(webReq);
     console.log('✅ BetterAuth response received:', webRes.status, 'Status text:', webRes.statusText);
-    
+
     // Convert Web API response to Express response
     res.status(webRes.status);
     webRes.headers.forEach((value, key) => {
       res.setHeader(key, value);
     });
-    
+
     // Read response body once
     const body = await webRes.text();
     console.log('📄 BetterAuth response body length:', body.length);
@@ -139,12 +139,12 @@ async function handleBetterAuth(req: ExpressRequest, res: Response, authPath: st
       path: req.path,
       method: req.method,
     });
-    
+
     if (!res.headersSent) {
-      const statusCode = error instanceof Error && 'statusCode' in error 
-        ? (error as any).statusCode 
+      const statusCode = error instanceof Error && 'statusCode' in error
+        ? (error as any).statusCode
         : 500;
-      
+
       res.status(statusCode).json({
         success: false,
         error: {
@@ -197,21 +197,31 @@ router.use('/auth', async (req, res) => {
   await handleBetterAuth(req, res, authPath);
 });
 
-// Public routes
+// ==========================================
+// Public Routes (No Authentication Required)
+// ==========================================
 router.use('/products', productRoutes);
-router.use('/upload', uploadRoutes);
+router.use('/upload', uploadRoutes); // Note: Upload might need auth in production, but currently treated as public or handled internally
 
-// Additional user routes
+// ==========================================
+// Authentication Routes (BetterAuth)
+// ==========================================
+// These are handled by the main router's /auth handler, but we expose them here for completeness if needed
+// or specific v1 auth extensions
 router.use('/user', authRoutes);
 
-// Protected user routes
+// ==========================================
+// Protected User Routes (Authentication Required)
+// ==========================================
 router.use('/cart', cartRoutes);
 router.use('/wishlist', wishlistRoutes);
 router.use('/orders', orderRoutes);
 router.use('/addresses', addressRoutes);
 router.use('/profile', profileRoutes);
 
-// Admin routes
+// ==========================================
+// Admin Routes (Authentication & Admin Role Required)
+// ==========================================
 router.use('/admin', adminRoutes);
 
 export default router;

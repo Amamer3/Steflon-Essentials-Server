@@ -11,7 +11,7 @@ export async function getCurrentUser(req: Request) {
     const host = req.headers.host || 'localhost:3000';
     const protocol = req.protocol || 'http';
     const url = `${protocol}://${host}${req.originalUrl}`;
-     
+
     const headers = new Headers();
     Object.entries(req.headers).forEach(([key, value]) => {
       if (value && typeof value === 'string') {
@@ -21,21 +21,28 @@ export async function getCurrentUser(req: Request) {
       }
     });
 
-    const webReq = new Request(url, {
+    // Use global Request constructor (Web API Request, not Express Request)
+    const WebAPIRequest = (globalThis as any).Request;
+    if (!WebAPIRequest) {
+      console.error('❌ WebAPI Request constructor not available');
+      return null;
+    }
+
+    const webReq = new WebAPIRequest(url, {
       method: req.method,
       headers: headers,
     });
 
     // Get session from BetterAuth
     const session = await auth.api.getSession({ headers: webReq.headers });
-    
+
     if (!session || !session.user) {
       return null;
     }
 
     // Get full user data from Firestore
     const userDoc = await db.collection('users').doc(session.user.id).get();
-    
+
     if (!userDoc.exists) {
       return null;
     }

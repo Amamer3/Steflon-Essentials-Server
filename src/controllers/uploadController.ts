@@ -2,18 +2,22 @@ import { Request, Response } from 'express';
 
 // Placeholder for file upload functionality
 // In production, you would use a service like Cloud Storage, S3, or similar
-export async function uploadProductImage(_req: Request, res: Response): Promise<void> {
+export async function uploadProductImage(req: Request, res: Response): Promise<void> {
   try {
-    // TODO: Implement actual file upload logic
-    // This would typically use multer or similar middleware
-    // and upload to Cloud Storage, S3, or a CDN
+    if (!req.file) {
+      res.status(400).json({ error: 'No file uploaded' });
+      return;
+    }
+
+    const host = req.get('host');
+    const protocol = req.protocol;
+    const url = `${protocol}://${host}/uploads/${req.file.filename}`;
 
     res.json({
       success: true,
-      message: 'File upload functionality to be implemented',
       data: {
-        url: 'https://placeholder.com/image.jpg',
-        filename: 'product-image.jpg',
+        url,
+        filename: req.file.filename,
       },
     });
   } catch (error) {
@@ -22,16 +26,26 @@ export async function uploadProductImage(_req: Request, res: Response): Promise<
   }
 }
 
-export async function uploadProductImages(_req: Request, res: Response): Promise<void> {
+export async function uploadProductImages(req: Request, res: Response): Promise<void> {
   try {
-    // TODO: Implement multiple file upload logic
+    if (!req.files || (Array.isArray(req.files) && req.files.length === 0)) {
+      res.status(400).json({ error: 'No files uploaded' });
+      return;
+    }
+
+    const host = req.get('host');
+    const protocol = req.protocol;
+    const files = req.files as Express.Multer.File[];
+
+    const data = files.map(file => ({
+      url: `${protocol}://${host}/uploads/${file.filename}`,
+      filename: file.filename,
+    }));
 
     res.json({
       success: true,
-      message: 'Multiple file upload functionality to be implemented',
       data: {
-        urls: ['https://placeholder.com/image1.jpg', 'https://placeholder.com/image2.jpg'],
-        filenames: ['product-image-1.jpg', 'product-image-2.jpg'],
+        files: data,
       },
     });
   } catch (error) {

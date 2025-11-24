@@ -6,6 +6,7 @@ export interface User {
   name?: string;
   phone?: string;
   role: 'user' | 'admin';
+  status?: 'Active' | 'Inactive' | 'Suspended' | 'Deleted';
   createdAt: Date;
   updatedAt: Date;
 }
@@ -22,7 +23,7 @@ export interface Product {
   brand?: string;
   sku: string;
   stock: number;
-  status: 'Active' | 'Inactive' | 'OutOfStock';
+  status: 'Active' | 'Inactive' | 'OutOfStock' | 'Deleted';
   featured: boolean;
   bestseller: boolean;
   rating?: number;
@@ -156,3 +157,39 @@ export interface AnalyticsTimeRange {
   groupBy?: 'day' | 'week' | 'month';
 }
 
+
+export interface Coupon {
+  id: string;
+  code: string;
+  name: string;
+  type: 'percentage' | 'fixed';
+  value: number;
+  minPurchase?: number;
+  maxDiscount?: number;
+  usageLimit?: number;
+  usedCount: number;
+  validFrom: Date;
+  validUntil: Date;
+  status: 'active' | 'inactive' | 'expired';
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface Notification {
+  id: string;
+  title: string;
+  message: string;
+  type: 'info' | 'success' | 'warning' | 'error' | 'promotional';
+  target: 'all' | 'user' | 'group';
+  recipients?: string[]; // User IDs if target is user
+  scheduledAt?: Date;
+  sentAt?: Date;
+  status: 'draft' | 'scheduled' | 'sent' | 'cancelled';
+  stats?: {
+    sent: number;
+    opened: number;
+    clicked: number;
+  };
+  createdAt: Date;
+  updatedAt: Date;
+}
