@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { getCurrentUser } from '../../../services/authService';
 import { authenticateUser } from '../../../middleware/auth';
-import { supabase } from '../../../config/supabase';
+import { supabase, supabaseAdmin } from '../../../config/supabase';
 
 const router = Router();
 
@@ -27,7 +27,7 @@ router.post('/sign-in', async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
 
-    // Use Supabase for authentication
+    // Use Supabase for authentication (anon client is fine for auth)
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -36,13 +36,14 @@ router.post('/sign-in', async (req: Request, res: Response) => {
     if (error || !data.user) {
       res.status(401).json({
         success: false,
+        message: error?.message || 'Authentication failed',
         error: error?.message || 'Authentication failed'
       });
       return;
     }
 
-    // Check if user has admin role in database
-    const { data: userData, error: dbError } = await supabase
+    // Check if user has admin role in database (using admin client to bypass RLS)
+    const { data: userData, error: dbError } = await supabaseAdmin
       .from('users')
       .select('role')
       .eq('id', data.user.id)
@@ -52,6 +53,7 @@ router.post('/sign-in', async (req: Request, res: Response) => {
       // User authenticated but is not an admin
       res.status(403).json({
         success: false,
+        message: 'Access denied: Admin privileges required',
         error: 'Access denied: Admin privileges required'
       });
       return;

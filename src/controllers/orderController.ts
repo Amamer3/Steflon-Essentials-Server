@@ -109,19 +109,20 @@ export async function createOrder(req: Request, res: Response): Promise<void> {
     if (orderError) throw orderError;
 
     // Update product stock and clear cart
-    for (const item of orderItems) {
-      const { data: product } = await supabase
-        .from('products')
-        .select('stock')
-        .eq('id', item.productId)
-        .single();
-        
-      if (product) {
-        await supabase
-          .from('products')
-          .update({ stock: product.stock - item.quantity })
-          .eq('id', item.productId);
+    try {
+      for (const item of orderItems) {
+        const { error: stockError } = await supabase.rpc('decrement_stock', {
+          product_id: item.productId,
+          quantity: item.quantity,
+        });
+
+        if (stockError) {
+          console.error(`Failed to decrement stock for product ${item.productId}:`, stockError);
+          // In a production app, you might want to rollback the order here if stock deduction fails
+        }
       }
+    } catch (stockError) {
+      console.error('Error in stock deduction loop:', stockError);
     }
 
     await supabase
@@ -201,7 +202,25 @@ export async function cancelOrder(req: Request, res: Response): Promise<void> {
     const userId = req.user!.id;
     const { id } = req.params;
 
-    const { data: order, error } = await supabase
+    // First get the order to know which items to restore
+    const { data: order, error: fetchError } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('id', id)
+      .eq('user_id', userId)
+      .single();
+
+    if (fetchError || !order) {
+      res.status(404).json({ success: false, error: 'Order not found' });
+      return;
+    }
+
+    if (order.status === 'Cancelled') {
+      res.status(400).json({ success: false, error: 'Order is already cancelled' });
+      return;
+    }
+
+    const { data: updatedOrder, error } = await supabase
       .from('orders')
       .update({ status: 'Cancelled', updated_at: new Date().toISOString() })
       .eq('id', id)
@@ -211,7 +230,19 @@ export async function cancelOrder(req: Request, res: Response): Promise<void> {
 
     if (error) throw error;
 
-    res.json({ success: true, data: order });
+    // Restore stock
+    try {
+      for (const item of order.items) {
+        await supabase.rpc('increment_stock', {
+          product_id: item.productId,
+          quantity: item.quantity,
+        });
+      }
+    } catch (restoreError) {
+      console.error('Error restoring stock for cancelled order:', restoreError);
+    }
+
+    res.json({ success: true, data: updatedOrder });
   } catch (error) {
     console.error('Error cancelling order:', error);
     res.status(500).json({ success: false, error: 'Internal server error' });

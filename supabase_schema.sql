@@ -31,6 +31,8 @@ create table public.products (
   sku text unique,
   stock int default 0 check (stock >= 0),
   images jsonb default '[]'::jsonb,
+  image text,
+  badge text,
   status text default 'Active' check (status in ('Active', 'Inactive', 'OutOfStock')),
   featured boolean default false,
   bestseller boolean default false,
@@ -163,6 +165,30 @@ $$ language plpgsql security definer;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
+
+-- Function to atomically decrement stock
+create or replace function public.decrement_stock(product_id uuid, quantity int)
+returns void as $$
+begin
+  update public.products
+  set stock = stock - quantity
+  where id = product_id and stock >= quantity;
+  
+  if not found then
+    raise exception 'Insufficient stock or product not found';
+  end if;
+end;
+$$ language plpgsql security definer;
+
+-- Function to atomically increment stock
+create or replace function public.increment_stock(product_id uuid, quantity int)
+returns void as $$
+begin
+  update public.products
+  set stock = stock + quantity
+  where id = product_id;
+end;
+$$ language plpgsql security definer;
 
 -- 11. ROW LEVEL SECURITY (RLS) - Basic Setup
 -- Enable RLS on all tables

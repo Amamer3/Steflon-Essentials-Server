@@ -39,21 +39,22 @@ export const errorHandler = (
 
   // Don't expose internal errors in production
   const isDevelopment = process.env.NODE_ENV === 'development';
+  const errorMsg = statusCode >= 500 && !isDevelopment 
+    ? 'Internal server error' 
+    : message;
+
   const errorResponse: any = {
     success: false,
-    error: {
-      message: statusCode >= 500 && !isDevelopment 
-        ? 'Internal server error' 
-        : message,
-    },
+    message: errorMsg,
+    error: errorMsg,
   };
 
   // Include stack trace and details only in development
   if (isDevelopment) {
-    errorResponse.error.stack = err.stack;
-    if (err.code) {
-      errorResponse.error.code = err.code;
-    }
+    errorResponse.details = {
+      stack: err.stack,
+      code: err.code,
+    };
   }
 
   res.status(statusCode).json(errorResponse);

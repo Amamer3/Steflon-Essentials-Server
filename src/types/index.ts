@@ -17,12 +17,14 @@ export interface Product {
   description: string;
   price: number;
   originalPrice?: number;
+  image?: string;
   images: string[];
   category: string;
   subcategory?: string;
   brand?: string;
   sku: string;
   stock: number;
+  badge?: string;
   status: 'Active' | 'Inactive' | 'OutOfStock' | 'Deleted';
   featured: boolean;
   bestseller: boolean;

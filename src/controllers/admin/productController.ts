@@ -54,7 +54,11 @@ export async function getAdminProductById(req: Request, res: Response, next: Nex
       .single();
 
     if (error || !product) {
-      res.status(404).json({ success: false, error: 'Product not found' });
+      res.status(404).json({ 
+        success: false, 
+        message: 'Product not found',
+        error: 'Product not found'
+      });
       return;
     }
 
@@ -77,6 +81,12 @@ export async function createProduct(req: Request, res: Response, next: NextFunct
       images: productData.images || [],
       // created_at and updated_at are handled by the database triggers
     };
+
+    // Handle field mapping for camelCase from frontend to snake_case in DB
+    if (productData.originalPrice !== undefined) {
+      newProduct.original_price = productData.originalPrice;
+      delete newProduct.originalPrice;
+    }
 
     // Remove camelCase versions if they exist to avoid DB errors
     delete newProduct.createdAt;

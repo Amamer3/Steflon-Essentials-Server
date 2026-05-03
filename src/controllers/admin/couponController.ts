@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { supabase } from '../../config/supabase';
+import { supabaseAdmin as supabase } from '../../config/supabase';
 
 export async function getCoupons(req: Request, res: Response): Promise<void> {
     try {
@@ -19,7 +19,7 @@ export async function getCoupons(req: Request, res: Response): Promise<void> {
             query = query.or(`code.ilike.%${search}%,name.ilike.%${search}%`);
         }
 
-        query = query.order('createdAt', { ascending: false });
+        query = query.order('created_at', { ascending: false });
         query = query.range(from, to);
 
         const { data: coupons, error, count } = await query;
@@ -38,7 +38,11 @@ export async function getCoupons(req: Request, res: Response): Promise<void> {
         });
     } catch (error) {
         console.error('Error getting coupons:', error);
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ 
+            success: false, 
+            error: { message: 'Internal server error' },
+            message: 'Internal server error'
+        });
     }
 }
 
@@ -52,14 +56,22 @@ export async function getCouponById(req: Request, res: Response): Promise<void> 
             .single();
 
         if (error || !coupon) {
-            res.status(404).json({ success: false, error: 'Coupon not found' });
+            res.status(404).json({ 
+                success: false, 
+                error: { message: 'Coupon not found' },
+                message: 'Coupon not found'
+            });
             return;
         }
 
         res.json({ success: true, data: coupon });
     } catch (error) {
         console.error('Error getting coupon:', error);
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ 
+            success: false, 
+            error: { message: 'Internal server error' },
+            message: 'Internal server error'
+        });
     }
 }
 
@@ -72,8 +84,8 @@ export async function createCoupon(req: Request, res: Response): Promise<void> {
             .insert({
                 ...couponData,
                 status: couponData.status || 'active',
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
             })
             .select()
             .single();
@@ -83,7 +95,11 @@ export async function createCoupon(req: Request, res: Response): Promise<void> {
         res.status(201).json({ success: true, data: coupon });
     } catch (error) {
         console.error('Error creating coupon:', error);
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ 
+            success: false, 
+            error: { message: 'Internal server error' },
+            message: 'Internal server error'
+        });
     }
 }
 
@@ -96,7 +112,7 @@ export async function updateCoupon(req: Request, res: Response): Promise<void> {
             .from('coupons')
             .update({
                 ...couponData,
-                updatedAt: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
             })
             .eq('id', id)
             .select()
@@ -107,7 +123,11 @@ export async function updateCoupon(req: Request, res: Response): Promise<void> {
         res.json({ success: true, data: coupon });
     } catch (error) {
         console.error('Error updating coupon:', error);
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ 
+            success: false, 
+            error: { message: 'Internal server error' },
+            message: 'Internal server error'
+        });
     }
 }
 
@@ -125,6 +145,10 @@ export async function deleteCoupon(req: Request, res: Response): Promise<void> {
         res.json({ success: true, message: 'Coupon deleted successfully' });
     } catch (error) {
         console.error('Error deleting coupon:', error);
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ 
+            success: false, 
+            error: { message: 'Internal server error' },
+            message: 'Internal server error'
+        });
     }
 }

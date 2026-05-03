@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { supabase } from '../../config/supabase';
+import { supabaseAdmin as supabase } from '../../config/supabase';
 
 export async function getAdminOrders(req: Request, res: Response): Promise<void> {
   try {
@@ -16,17 +16,17 @@ export async function getAdminOrders(req: Request, res: Response): Promise<void>
     }
 
     if (search) {
-      query = query.or(`orderNumber.ilike.%${search}%,userId.ilike.%${search}%`);
+      query = query.or(`order_number.ilike.%${search}%,user_id.ilike.%${search}%`);
     }
 
     if (dateFrom) {
-      query = query.gte('createdAt', new Date(dateFrom as string).toISOString());
+      query = query.gte('created_at', new Date(dateFrom as string).toISOString());
     }
     if (dateTo) {
-      query = query.lte('createdAt', new Date(dateTo as string).toISOString());
+      query = query.lte('created_at', new Date(dateTo as string).toISOString());
     }
 
-    query = query.order('createdAt', { ascending: false });
+    query = query.order('created_at', { ascending: false });
     query = query.range(from, to);
 
     const { data: orders, error, count } = await query;
@@ -45,7 +45,11 @@ export async function getAdminOrders(req: Request, res: Response): Promise<void>
     });
   } catch (error) {
     console.error('Error getting admin orders:', error);
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error',
+      error: 'Internal server error'
+    });
   }
 }
 
@@ -59,14 +63,22 @@ export async function getAdminOrderById(req: Request, res: Response): Promise<vo
       .single();
 
     if (error || !order) {
-      res.status(404).json({ success: false, error: 'Order not found' });
+      res.status(404).json({ 
+        success: false, 
+        message: 'Order not found',
+        error: 'Order not found'
+      });
       return;
     }
 
     res.json({ success: true, data: order });
   } catch (error) {
     console.error('Error getting admin order:', error);
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error',
+      error: 'Internal server error'
+    });
   }
 }
 
@@ -77,7 +89,11 @@ export async function updateOrderStatus(req: Request, res: Response): Promise<vo
 
     const validStatuses = ['Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled', 'Refunded'];
     if (!validStatuses.includes(status)) {
-      res.status(400).json({ success: false, error: 'Invalid status' });
+      res.status(400).json({ 
+        success: false, 
+        message: 'Invalid status',
+        error: 'Invalid status'
+      });
       return;
     }
 
@@ -85,7 +101,7 @@ export async function updateOrderStatus(req: Request, res: Response): Promise<vo
       .from('orders')
       .update({
         status,
-        updatedAt: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       })
       .eq('id', id)
       .select()
@@ -96,7 +112,11 @@ export async function updateOrderStatus(req: Request, res: Response): Promise<vo
     res.json({ success: true, data: order });
   } catch (error) {
     console.error('Error updating order status:', error);
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error',
+      error: 'Internal server error'
+    });
   }
 }
 
@@ -114,7 +134,11 @@ export async function deleteOrder(req: Request, res: Response): Promise<void> {
     res.json({ success: true, message: 'Order deleted successfully' });
   } catch (error) {
     console.error('Error deleting order:', error);
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error',
+      error: 'Internal server error'
+    });
   }
 }
 
@@ -123,12 +147,16 @@ export async function exportOrders(_req: Request, res: Response): Promise<void> 
     const { data: orders, error } = await supabase
       .from('orders')
       .select('*')
-      .order('createdAt', { ascending: false });
+      .order('created_at', { ascending: false });
 
     if (error) throw error;
     res.json({ success: true, data: orders });
   } catch (error) {
     console.error('Error exporting orders:', error);
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error',
+      error: 'Internal server error'
+    });
   }
 }

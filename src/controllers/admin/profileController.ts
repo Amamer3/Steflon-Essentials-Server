@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { supabase } from '../../config/supabase';
+import { supabaseAdmin as supabase } from '../../config/supabase';
 
 export async function getAdminProfile(req: Request, res: Response): Promise<void> {
   try {
@@ -38,7 +38,7 @@ export async function updateAdminProfile(req: Request, res: Response): Promise<v
       .from('users')
       .update({
         ...updateData,
-        updatedAt: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       })
       .eq('id', userId)
       .select()

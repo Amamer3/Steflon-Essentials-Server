@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { supabase } from '../../config/supabase';
+import { supabaseAdmin as supabase } from '../../config/supabase';
 
 export async function getAdminCustomers(req: Request, res: Response): Promise<void> {
   try {
@@ -19,7 +19,7 @@ export async function getAdminCustomers(req: Request, res: Response): Promise<vo
       query = query.or(`email.ilike.%${search}%,name.ilike.%${search}%`);
     }
 
-    query = query.order('createdAt', { ascending: false });
+    query = query.order('created_at', { ascending: false });
     query = query.range(from, to);
 
     const { data: customers, error, count } = await query;
@@ -38,7 +38,11 @@ export async function getAdminCustomers(req: Request, res: Response): Promise<vo
     });
   } catch (error) {
     console.error('Error getting admin customers:', error);
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    res.status(500).json({ 
+      success: false, 
+      error: { message: 'Internal server error' },
+      message: 'Internal server error'
+    });
   }
 }
 
@@ -53,7 +57,11 @@ export async function getAdminCustomerById(req: Request, res: Response): Promise
       .single();
 
     if (uError || !customer) {
-      res.status(404).json({ success: false, error: 'Customer not found' });
+      res.status(404).json({ 
+        success: false, 
+        error: { message: 'Customer not found' },
+        message: 'Customer not found'
+      });
       return;
     }
 
@@ -61,8 +69,8 @@ export async function getAdminCustomerById(req: Request, res: Response): Promise
     const { data: orders } = await supabase
       .from('orders')
       .select('*')
-      .eq('userId', id)
-      .order('createdAt', { ascending: false })
+      .eq('user_id', id)
+      .order('created_at', { ascending: false })
       .limit(10);
 
     res.json({
@@ -74,7 +82,11 @@ export async function getAdminCustomerById(req: Request, res: Response): Promise
     });
   } catch (error) {
     console.error('Error getting admin customer:', error);
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    res.status(500).json({ 
+      success: false, 
+      error: { message: 'Internal server error' },
+      message: 'Internal server error'
+    });
   }
 }
 
@@ -87,7 +99,7 @@ export async function updateCustomerStatus(req: Request, res: Response): Promise
       .from('users')
       .update({
         status,
-        updatedAt: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       })
       .eq('id', id)
       .select()
@@ -98,7 +110,11 @@ export async function updateCustomerStatus(req: Request, res: Response): Promise
     res.json({ success: true, data: customer });
   } catch (error) {
     console.error('Error updating customer status:', error);
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    res.status(500).json({ 
+      success: false, 
+      error: { message: 'Internal server error' },
+      message: 'Internal server error'
+    });
   }
 }
 
@@ -116,6 +132,10 @@ export async function deleteCustomer(req: Request, res: Response): Promise<void>
     res.json({ success: true, message: 'Customer deleted successfully' });
   } catch (error) {
     console.error('Error deleting customer:', error);
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    res.status(500).json({ 
+      success: false, 
+      error: { message: 'Internal server error' },
+      message: 'Internal server error'
+    });
   }
 }

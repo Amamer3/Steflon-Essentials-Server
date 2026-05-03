@@ -183,7 +183,7 @@ export async function getRecentOrders(_req: Request, res: Response): Promise<voi
     const { data: orders, error } = await supabase
       .from('orders')
       .select('*')
-      .order('createdAt', { ascending: false })
+      .order('created_at', { ascending: false })
       .limit(10);
 
     if (error) throw error;
@@ -191,7 +191,11 @@ export async function getRecentOrders(_req: Request, res: Response): Promise<voi
     res.json({ success: true, data: orders });
   } catch (error) {
     console.error('Error getting recent orders:', error);
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error',
+      error: 'Internal server error'
+    });
   }
 }
 
@@ -202,17 +206,17 @@ export async function getRevenueStats(req: Request, res: Response): Promise<void
 
     const { data: orders, error } = await supabase
       .from('orders')
-      .select('total, createdAt')
-      .gte('createdAt', start)
-      .lte('createdAt', end)
-      .order('createdAt', { ascending: true });
+      .select('total, created_at')
+      .gte('created_at', start)
+      .lte('created_at', end)
+      .order('created_at', { ascending: true });
 
     if (error) throw error;
 
     // Group by date
     const stats: Record<string, number> = {};
     (orders || []).forEach((order: any) => {
-      const date = new Date(order.createdAt).toISOString().split('T')[0];
+      const date = new Date(order.created_at).toISOString().split('T')[0];
       stats[date] = (stats[date] || 0) + (order.total || 0);
     });
 
@@ -224,7 +228,11 @@ export async function getRevenueStats(req: Request, res: Response): Promise<void
     res.json({ success: true, data: formattedData });
   } catch (error) {
     console.error('Error getting revenue stats:', error);
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error',
+      error: 'Internal server error'
+    });
   }
 }
 
