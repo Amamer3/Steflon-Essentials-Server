@@ -1,96 +1,80 @@
 import { Request, Response } from 'express';
-import { db } from '../../config/firestore';
-
-function convertTimestamp(data: any): any {
-  if (!data) return null;
-  const converted: any = { ...data };
-  Object.keys(converted).forEach((key) => {
-    if (converted[key] && typeof converted[key] === 'object' && converted[key].toDate) {
-      converted[key] = converted[key].toDate();
-    }
-  });
-  return converted;
-}
+import { supabase } from '../../config/supabase';
 
 export async function getAdminCustomers(req: Request, res: Response): Promise<void> {
   try {
     const { page = '1', limit = '20', search, status } = req.query;
     const pageNum = parseInt(page as string, 10);
     const limitNum = parseInt(limit as string, 10);
+    const from = (pageNum - 1) * limitNum;
+    const to = from + limitNum - 1;
 
-    let query = db.collection('users').where('role', '==', 'user') as any;
+    let query = supabase.from('users').select('*', { count: 'exact' }).eq('role', 'user');
+    
     if (status) {
-      query = query.where('status', '==', status);
+      query = query.eq('status', status);
     }
 
-    const snapshot = await query.get();
-    let customers = snapshot.docs.map((doc: any) => ({
-      id: doc.id,
-      ...convertTimestamp(doc.data()),
-    }));
-
-    // Apply search filter
     if (search) {
-      const searchLower = (search as string).toLowerCase();
-      customers = customers.filter(
-        (c: any) =>
-          c.email?.toLowerCase().includes(searchLower) ||
-          c.name?.toLowerCase().includes(searchLower)
-      );
+      query = query.or(`email.ilike.%${search}%,name.ilike.%${search}%`);
     }
 
-    const total = customers.length;
-    const paginatedCustomers = customers.slice((pageNum - 1) * limitNum, pageNum * limitNum);
+    query = query.order('createdAt', { ascending: false });
+    query = query.range(from, to);
+
+    const { data: customers, error, count } = await query;
+
+    if (error) throw error;
 
     res.json({
       success: true,
-      data: paginatedCustomers,
+      data: customers,
       pagination: {
         page: pageNum,
         limit: limitNum,
-        total,
-        totalPages: Math.ceil(total / limitNum),
+        total: count || 0,
+        totalPages: Math.ceil((count || 0) / limitNum),
       },
     });
   } catch (error) {
     console.error('Error getting admin customers:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 }
 
 export async function getAdminCustomerById(req: Request, res: Response): Promise<void> {
   try {
     const { id } = req.params;
-    const userDoc = await db.collection('users').doc(id).get();
+    
+    const { data: customer, error: uError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', id)
+      .single();
 
-    if (!userDoc.exists) {
-      res.status(404).json({ error: 'Customer not found' });
+    if (uError || !customer) {
+      res.status(404).json({ success: false, error: 'Customer not found' });
       return;
     }
 
     // Get order history
-    const ordersSnapshot = await db
-      .collection('orders')
-      .where('userId', '==', id)
-      .orderBy('createdAt', 'desc')
-      .limit(10)
-      .get();
+    const { data: orders } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('userId', id)
+      .order('createdAt', { ascending: false })
+      .limit(10);
 
-    const orders = ordersSnapshot.docs.map((doc: any) => ({
-      id: doc.id,
-      ...convertTimestamp(doc.data()),
-    }));
-
-    const customer = {
-      id: userDoc.id,
-      ...convertTimestamp(userDoc.data()),
-      orders,
-    };
-
-    res.json({ success: true, data: customer });
+    res.json({
+      success: true,
+      data: {
+        ...customer,
+        orders: orders || [],
+      },
+    });
   } catch (error) {
     console.error('Error getting admin customer:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 }
 
@@ -99,34 +83,39 @@ export async function updateCustomerStatus(req: Request, res: Response): Promise
     const { id } = req.params;
     const { status } = req.body;
 
-    if (!['Active', 'Inactive', 'Suspended'].includes(status)) {
-      res.status(400).json({ error: 'Invalid status' });
-      return;
-    }
+    const { data: customer, error } = await supabase
+      .from('users')
+      .update({
+        status,
+        updatedAt: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .select()
+      .single();
 
-    await db.collection('users').doc(id).update({
-      status,
-      updatedAt: new Date(),
-    });
+    if (error) throw error;
 
-    res.json({ success: true, message: 'Customer status updated' });
+    res.json({ success: true, data: customer });
   } catch (error) {
     console.error('Error updating customer status:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 }
 
 export async function deleteCustomer(req: Request, res: Response): Promise<void> {
   try {
     const { id } = req.params;
-    await db.collection('users').doc(id).update({
-      status: 'Deleted',
-      updatedAt: new Date(),
-    });
-    res.json({ success: true, message: 'Customer deleted' });
+
+    const { error } = await supabase
+      .from('users')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+
+    res.json({ success: true, message: 'Customer deleted successfully' });
   } catch (error) {
     console.error('Error deleting customer:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 }
-

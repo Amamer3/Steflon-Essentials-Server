@@ -1,91 +1,72 @@
 import { Request, Response } from 'express';
-import { db } from '../../config/firestore';
-import { Order } from '../../types';
-
-function convertTimestamp(data: any): any {
-  if (!data) return null;
-  const converted: any = { ...data };
-  Object.keys(converted).forEach((key) => {
-    if (converted[key] && typeof converted[key] === 'object' && converted[key].toDate) {
-      converted[key] = converted[key].toDate();
-    }
-  });
-  return converted;
-}
+import { supabase } from '../../config/supabase';
 
 export async function getAdminOrders(req: Request, res: Response): Promise<void> {
   try {
     const { page = '1', limit = '20', status, search, dateFrom, dateTo } = req.query;
     const pageNum = parseInt(page as string, 10);
     const limitNum = parseInt(limit as string, 10);
+    const from = (pageNum - 1) * limitNum;
+    const to = from + limitNum - 1;
 
-    let query = db.collection('orders') as any;
+    let query = supabase.from('orders').select('*', { count: 'exact' });
 
     if (status) {
-      query = query.where('status', '==', status);
+      query = query.eq('status', status);
     }
 
-    const snapshot = await query.orderBy('createdAt', 'desc').get();
-    let orders = snapshot.docs.map((doc: any) => ({
-      id: doc.id,
-      ...convertTimestamp(doc.data()),
-    })) as Order[];
-
-    // Apply filters
     if (search) {
-      const searchLower = (search as string).toLowerCase();
-      orders = orders.filter(
-        (o) =>
-          o.orderNumber.toLowerCase().includes(searchLower) ||
-          o.userId.toLowerCase().includes(searchLower)
-      );
+      query = query.or(`orderNumber.ilike.%${search}%,userId.ilike.%${search}%`);
     }
 
-    if (dateFrom || dateTo) {
-      const fromDate = dateFrom ? new Date(dateFrom as string) : null;
-      const toDate = dateTo ? new Date(dateTo as string) : null;
-      orders = orders.filter((o) => {
-        const orderDate = o.createdAt;
-        if (fromDate && orderDate < fromDate) return false;
-        if (toDate && orderDate > toDate) return false;
-        return true;
-      });
+    if (dateFrom) {
+      query = query.gte('createdAt', new Date(dateFrom as string).toISOString());
+    }
+    if (dateTo) {
+      query = query.lte('createdAt', new Date(dateTo as string).toISOString());
     }
 
-    const total = orders.length;
-    const paginatedOrders = orders.slice((pageNum - 1) * limitNum, pageNum * limitNum);
+    query = query.order('createdAt', { ascending: false });
+    query = query.range(from, to);
+
+    const { data: orders, error, count } = await query;
+
+    if (error) throw error;
 
     res.json({
       success: true,
-      data: paginatedOrders,
+      data: orders,
       pagination: {
         page: pageNum,
         limit: limitNum,
-        total,
-        totalPages: Math.ceil(total / limitNum),
+        total: count || 0,
+        totalPages: Math.ceil((count || 0) / limitNum),
       },
     });
   } catch (error) {
     console.error('Error getting admin orders:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 }
 
 export async function getAdminOrderById(req: Request, res: Response): Promise<void> {
   try {
     const { id } = req.params;
-    const doc = await db.collection('orders').doc(id).get();
+    const { data: order, error } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('id', id)
+      .single();
 
-    if (!doc.exists) {
-      res.status(404).json({ error: 'Order not found' });
+    if (error || !order) {
+      res.status(404).json({ success: false, error: 'Order not found' });
       return;
     }
 
-    const order = { id: doc.id, ...convertTimestamp(doc.data()) } as Order;
     res.json({ success: true, data: order });
   } catch (error) {
     console.error('Error getting admin order:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 }
 
@@ -96,60 +77,58 @@ export async function updateOrderStatus(req: Request, res: Response): Promise<vo
 
     const validStatuses = ['Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled', 'Refunded'];
     if (!validStatuses.includes(status)) {
-      res.status(400).json({ error: 'Invalid status' });
+      res.status(400).json({ success: false, error: 'Invalid status' });
       return;
     }
 
-    await db.collection('orders').doc(id).update({
-      status,
-      updatedAt: new Date(),
-    });
+    const { data: order, error } = await supabase
+      .from('orders')
+      .update({
+        status,
+        updatedAt: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .select()
+      .single();
 
-    res.json({ success: true, message: 'Order status updated' });
+    if (error) throw error;
+
+    res.json({ success: true, data: order });
   } catch (error) {
     console.error('Error updating order status:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 }
 
-export async function exportOrders(req: Request, res: Response): Promise<void> {
+export async function deleteOrder(req: Request, res: Response): Promise<void> {
   try {
-    const { format = 'csv', status, dateFrom, dateTo } = req.query;
+    const { id } = req.params;
 
-    let query = db.collection('orders') as any;
-    if (status) {
-      query = query.where('status', '==', status);
-    }
+    const { error } = await supabase
+      .from('orders')
+      .delete()
+      .eq('id', id);
 
-    const snapshot = await query.orderBy('createdAt', 'desc').get();
-    let orders = snapshot.docs.map((doc: any) => ({
-      id: doc.id,
-      ...convertTimestamp(doc.data()),
-    })) as Order[];
+    if (error) throw error;
 
-    // Apply date filters
-    if (dateFrom || dateTo) {
-      const fromDate = dateFrom ? new Date(dateFrom as string) : null;
-      const toDate = dateTo ? new Date(dateTo as string) : null;
-      orders = orders.filter((o) => {
-        const orderDate = o.createdAt;
-        if (fromDate && orderDate < fromDate) return false;
-        if (toDate && orderDate > toDate) return false;
-        return true;
-      });
-    }
+    res.json({ success: true, message: 'Order deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting order:', error);
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+}
 
-    // TODO: Implement actual CSV/Excel export
-    // For now, return JSON
-    res.json({
-      success: true,
-      message: 'Export functionality to be implemented',
-      data: orders,
-      format,
-    });
+export async function exportOrders(_req: Request, res: Response): Promise<void> {
+  try {
+    const { data: orders, error } = await supabase
+      .from('orders')
+      .select('*')
+      .order('createdAt', { ascending: false });
+
+    if (error) throw error;
+    res.json({ success: true, data: orders });
   } catch (error) {
     console.error('Error exporting orders:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 }
-

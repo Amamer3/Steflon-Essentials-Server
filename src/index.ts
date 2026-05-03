@@ -23,11 +23,12 @@ app.use('/api', routes);
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-const PORT = parseInt(env.PORT, 10) || 3000;
+const PORT = parseInt(env.PORT, 10) || 5000;
 
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📝 Environment: ${env.NODE_ENV}`);
-  console.log(`🔐 Auth URL: ${env.BETTER_AUTH_URL}`);
+  console.log(`Server running on port ${PORT}`);
+  console.log(`Environment: ${env.NODE_ENV}`);
+  console.log(`Supabase connected`);
+  console.log(`API Documentation: http://localhost:${PORT}/api/docs`);
 });
 

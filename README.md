@@ -1,11 +1,11 @@
 # Steflow Store Server
 
-Backend server for Steflow Store built with Node.js, Express, TypeScript, BetterAuth, and Firestore.
+Backend server for Steflow Store built with Node.js, Express, TypeScript, and Supabase.
 
 ## Features
 
-- 🔐 **Authentication**: Secure authentication with BetterAuth using a custom Firestore adapter.
-- 🗄️ **Firestore Database**: Scalable NoSQL database integration.
+- 🔐 **Authentication**: Secure authentication with Supabase Auth.
+- 🗄️ **Supabase Database**: Scalable PostgreSQL database integration.
 - 🛍️ **Product Management**: Full CRUD operations for products with filtering, sorting, and pagination.
 - 👤 **User Profiles**: User profile management and password updates.
 - 📊 **Admin Analytics**: Dashboard stats, revenue analytics, and customer insights.
@@ -19,8 +19,7 @@ Backend server for Steflow Store built with Node.js, Express, TypeScript, Better
 
 - Node.js 18+
 - npm or yarn
-- Firebase project with Firestore enabled
-- BetterAuth credentials
+- Supabase project
 
 ## Environment Variables
 
@@ -28,17 +27,13 @@ Create a `.env` file in the root directory with the following variables:
 
 ```env
 # Server
-PORT=3000
+PORT=5000
 NODE_ENV=development
 
-# BetterAuth
-BETTER_AUTH_SECRET=your-secret-key-at-least-32-characters-long
-BETTER_AUTH_URL=http://localhost:3000
-
-# Firestore
-FIREBASE_PROJECT_ID=your-project-id
-FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
-FIREBASE_CLIENT_EMAIL=your-service-account@your-project.iam.gserviceaccount.com
+# Supabase
+SUPABASE_URL=your-supabase-url
+SUPABASE_ANON_KEY=your-supabase-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
 ```
 
 ## Installation
@@ -66,17 +61,18 @@ npm run dev
 
 ```
 src/
-├── adapters/
-│   └── firestore.ts     # Custom Firestore adapter for BetterAuth
 ├── config/
-│   ├── auth.ts          # BetterAuth configuration
 │   ├── env.ts           # Environment variable validation
-│   └── firestore.ts     # Firestore connection
+│   └── supabase.ts      # Supabase client connection
 ├── controllers/
-│   ├── admin/           # Admin-specific controllers (analytics, profiles)
+│   ├── admin/           # Admin-specific controllers (analytics, products, orders, etc.)
+│   ├── addressController.ts
+│   ├── cartController.ts
+│   ├── orderController.ts
 │   ├── productController.ts
 │   ├── profileController.ts
-│   └── uploadController.ts
+│   ├── uploadController.ts
+│   └── wishlistController.ts
 ├── middleware/
 │   ├── auth.ts          # Authentication & authorization middleware
 │   ├── cors.ts          # CORS middleware
@@ -84,13 +80,14 @@ src/
 │   └── notFound.ts      # 404 handler
 ├── routes/
 │   ├── v1/              # API v1 routes
-│   │   ├── admin.ts
+│   │   ├── admin/
+│   │   ├── auth.ts
 │   │   ├── products.ts
 │   │   ├── profile.ts
 │   │   └── upload.ts
 │   └── index.ts         # Main router
 ├── services/
-│   └── authService.ts   # Authentication services
+│   └── authService.ts   # Authentication helper services
 ├── types/
 │   └── index.ts         # TypeScript type definitions
 └── index.ts             # Express app entry point
@@ -98,64 +95,4 @@ src/
 
 ## API Documentation
 
-Interactive API documentation is available using Scalar at:
-- **Development**: `http://localhost:3000/api/docs`
-
-The documentation includes all endpoints, request/response schemas, and allows you to test API calls directly from the browser.
-
-## API Endpoints
-
-### Authentication
-All authentication endpoints are handled by BetterAuth at `/api/auth/*`.
-
-### Products (`/api/v1/products`)
-- `GET /` - Get all products (supports pagination, filtering, sorting)
-- `GET /:id` - Get a single product
-- `GET /featured` - Get featured products
-- `GET /bestsellers` - Get bestseller products
-- `GET /categories` - Get product categories
-
-### User Profile (`/api/v1/profile`)
-- `GET /` - Get current user profile
-- `PATCH /` - Update user profile
-- `POST /change-password` - Initiate password change
-
-### Admin (`/api/v1/admin`)
-- `GET /analytics/dashboard` - Get dashboard stats
-- `GET /analytics/revenue` - Get revenue analytics
-- `GET /analytics/orders` - Get order analytics
-- `GET /analytics/products` - Get product performance
-- `GET /analytics/customers` - Get customer insights
-- `GET /profile` - Get admin profile
-- `PATCH /profile` - Update admin profile
-
-### Upload (`/api/v1/upload`)
-- `POST /image` - Upload a single product image
-- `POST /images` - Upload multiple product images
-
-### Health Check
-- `GET /api/health` - Server health check
-
-## Deployment
-
-### Deploy to Render
-
-1. Fork or push this repository to your GitHub account.
-2. Create a new **Web Service** on Render.
-3. Connect your GitHub repository.
-4. Render will automatically detect the `render.yaml` file if you choose "Blueprints", or you can manually configure:
-   - **Build Command**: `npm install && npm run build`
-   - **Start Command**: `npm start`
-5. Add the following **Environment Variables** in the Render dashboard:
-   - `BETTER_AUTH_SECRET`: Your generated secret key
-   - `BETTER_AUTH_URL`: Your Render URL (e.g., `https://your-app.onrender.com`)
-   - `FIREBASE_PROJECT_ID`: Your Firebase project ID
-   - `FIREBASE_CLIENT_EMAIL`: Your Firebase service account email
-   - `FIREBASE_PRIVATE_KEY`: Your Firebase private key (handle newlines correctly)
-
-> **Note**: For `FIREBASE_PRIVATE_KEY` in Render, you might need to replace literal newlines with `\n` or paste the entire key including `-----BEGIN PRIVATE KEY-----` and `-----END PRIVATE KEY-----` exactly as it appears in your JSON file.
-
-## License
-
-ISC
-
+The API documentation is available at `/api/docs` when the server is running.

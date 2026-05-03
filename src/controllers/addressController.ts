@@ -1,68 +1,78 @@
 import { Request, Response } from 'express';
-import { db } from '../config/firestore';
-import { Address } from '../types';
-
-function convertTimestamp(data: any): any {
-  if (!data) return null;
-  const converted: any = { ...data };
-  Object.keys(converted).forEach((key) => {
-    if (converted[key] && typeof converted[key] === 'object' && converted[key].toDate) {
-      converted[key] = converted[key].toDate();
-    }
-  });
-  return converted;
-}
+import { supabaseAdmin as supabase } from '../config/supabase';
 
 export async function getAddresses(req: Request, res: Response): Promise<void> {
   try {
     const userId = req.user!.id;
-    const snapshot = await db.collection('addresses').where('userId', '==', userId).get();
+    const { data: addresses, error } = await supabase
+      .from('addresses')
+      .select('*')
+      .eq('user_id', userId);
 
-    const addresses = snapshot.docs.map((doc: any) => ({
-      id: doc.id,
-      ...convertTimestamp(doc.data()),
-    })) as Address[];
+    if (error) throw error;
 
     res.json({ success: true, data: addresses });
   } catch (error) {
     console.error('Error getting addresses:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 }
 
 export async function addAddress(req: Request, res: Response): Promise<void> {
   try {
     const userId = req.user!.id;
-    const addressData = req.body;
+    const {
+      firstName,
+      lastName,
+      phone,
+      addressLine1,
+      addressLine2,
+      city,
+      state,
+      zipCode,
+      country,
+      type,
+      isDefault
+    } = req.body;
 
     // If this is set as default, unset other defaults
-    if (addressData.isDefault) {
-      const existingSnapshot = await db
-        .collection('addresses')
-        .where('userId', '==', userId)
-        .where('isDefault', '==', true)
-        .get();
-
-      const batch = db.batch();
-      existingSnapshot.docs.forEach((doc) => {
-        batch.update(doc.ref, { isDefault: false });
-      });
-      await batch.commit();
+    if (isDefault) {
+      await supabase
+        .from('addresses')
+        .update({ is_default: false })
+        .eq('user_id', userId)
+        .eq('is_default', true);
     }
 
-    const newAddress: Omit<Address, 'id'> = {
-      userId,
-      ...addressData,
-      isDefault: addressData.isDefault || false,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+    const newAddress = {
+      user_id: userId,
+      first_name: firstName,
+      last_name: lastName,
+      phone,
+      address_line1: addressLine1,
+      address_line2: addressLine2,
+      city,
+      state,
+      zip_code: zipCode,
+      country,
+      type: type || 'shipping',
+      is_default: isDefault || false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     };
 
-    const docRef = await db.collection('addresses').add(newAddress);
-    res.json({ success: true, data: { id: docRef.id, ...newAddress } });
+    const { data: address, error } = await supabase
+      .from('addresses')
+      .insert(newAddress)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.json({ success: true, data: address });
   } catch (error) {
     console.error('Error adding address:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 }
 
@@ -70,49 +80,75 @@ export async function updateAddress(req: Request, res: Response): Promise<void> 
   try {
     const userId = req.user!.id;
     const { id } = req.params;
-    const addressData = req.body;
+    const {
+      firstName,
+      lastName,
+      phone,
+      addressLine1,
+      addressLine2,
+      city,
+      state,
+      zipCode,
+      country,
+      type,
+      isDefault
+    } = req.body;
 
-    const addressDoc = await db.collection('addresses').doc(id);
-    const addressSnapshot = await addressDoc.get();
+    const { data: existingAddress, error: fetchError } = await supabase
+      .from('addresses')
+      .select('*')
+      .eq('id', id)
+      .single();
 
-    if (!addressSnapshot.exists) {
-      res.status(404).json({ error: 'Address not found' });
+    if (fetchError || !existingAddress) {
+      res.status(404).json({ success: false, error: 'Address not found' });
       return;
     }
 
-    const address = convertTimestamp(addressSnapshot.data());
-    if (address.userId !== userId) {
-      res.status(403).json({ error: 'Forbidden' });
+    if (existingAddress.user_id !== userId) {
+      res.status(403).json({ success: false, error: 'Forbidden' });
       return;
     }
 
     // If setting as default, unset other defaults
-    if (addressData.isDefault) {
-      const existingSnapshot = await db
-        .collection('addresses')
-        .where('userId', '==', userId)
-        .where('isDefault', '==', true)
-        .get();
-
-      const batch = db.batch();
-      existingSnapshot.docs.forEach((doc) => {
-        if (doc.id !== id) {
-          batch.update(doc.ref, { isDefault: false });
-        }
-      });
-      await batch.commit();
+    if (isDefault) {
+      await supabase
+        .from('addresses')
+        .update({ is_default: false })
+        .eq('user_id', userId)
+        .eq('is_default', true)
+        .neq('id', id);
     }
 
-    await addressDoc.update({
-      ...addressData,
-      updatedAt: new Date(),
-    });
+    const updateData: any = {
+      updated_at: new Date().toISOString(),
+    };
 
-    const updatedDoc = await addressDoc.get();
-    res.json({ success: true, data: { id: updatedDoc.id, ...convertTimestamp(updatedDoc.data()) } });
+    if (firstName) updateData.first_name = firstName;
+    if (lastName) updateData.last_name = lastName;
+    if (phone !== undefined) updateData.phone = phone;
+    if (addressLine1) updateData.address_line1 = addressLine1;
+    if (addressLine2 !== undefined) updateData.address_line2 = addressLine2;
+    if (city) updateData.city = city;
+    if (state) updateData.state = state;
+    if (zipCode) updateData.zip_code = zipCode;
+    if (country) updateData.country = country;
+    if (type) updateData.type = type;
+    if (isDefault !== undefined) updateData.is_default = isDefault;
+
+    const { data: updatedAddress, error: updateError } = await supabase
+      .from('addresses')
+      .update(updateData)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (updateError) throw updateError;
+
+    res.json({ success: true, data: updatedAddress });
   } catch (error) {
     console.error('Error updating address:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 }
 
@@ -121,25 +157,33 @@ export async function deleteAddress(req: Request, res: Response): Promise<void> 
     const userId = req.user!.id;
     const { id } = req.params;
 
-    const addressDoc = await db.collection('addresses').doc(id);
-    const addressSnapshot = await addressDoc.get();
+    const { data: existingAddress, error: fetchError } = await supabase
+      .from('addresses')
+      .select('user_id')
+      .eq('id', id)
+      .single();
 
-    if (!addressSnapshot.exists) {
-      res.status(404).json({ error: 'Address not found' });
+    if (fetchError || !existingAddress) {
+      res.status(404).json({ success: false, error: 'Address not found' });
       return;
     }
 
-    const address = convertTimestamp(addressSnapshot.data());
-    if (address.userId !== userId) {
-      res.status(403).json({ error: 'Forbidden' });
+    if (existingAddress.user_id !== userId) {
+      res.status(403).json({ success: false, error: 'Forbidden' });
       return;
     }
 
-    await addressDoc.delete();
-    res.json({ success: true, message: 'Address deleted' });
+    const { error } = await supabase
+      .from('addresses')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+
+    res.json({ success: true, message: 'Address deleted successfully' });
   } catch (error) {
     console.error('Error deleting address:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 }
 
@@ -148,38 +192,27 @@ export async function setDefaultAddress(req: Request, res: Response): Promise<vo
     const userId = req.user!.id;
     const { id } = req.params;
 
-    const addressDoc = await db.collection('addresses').doc(id);
-    const addressSnapshot = await addressDoc.get();
+    // Unset current default
+    await supabase
+      .from('addresses')
+      .update({ is_default: false })
+      .eq('user_id', userId)
+      .eq('is_default', true);
 
-    if (!addressSnapshot.exists) {
-      res.status(404).json({ error: 'Address not found' });
-      return;
-    }
+    // Set new default
+    const { data: address, error } = await supabase
+      .from('addresses')
+      .update({ is_default: true, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('user_id', userId)
+      .select()
+      .single();
 
-    const address = convertTimestamp(addressSnapshot.data());
-    if (address.userId !== userId) {
-      res.status(403).json({ error: 'Forbidden' });
-      return;
-    }
+    if (error) throw error;
 
-    // Unset other defaults
-    const existingSnapshot = await db
-      .collection('addresses')
-      .where('userId', '==', userId)
-      .where('isDefault', '==', true)
-      .get();
-
-    const batch = db.batch();
-    existingSnapshot.docs.forEach((doc) => {
-      batch.update(doc.ref, { isDefault: false });
-    });
-    batch.update(addressDoc, { isDefault: true, updatedAt: new Date() });
-    await batch.commit();
-
-    res.json({ success: true, message: 'Default address updated' });
+    res.json({ success: true, data: address });
   } catch (error) {
     console.error('Error setting default address:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 }
-

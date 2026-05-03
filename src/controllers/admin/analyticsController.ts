@@ -1,18 +1,7 @@
-import { Request, Response } from 'express';
-import { db } from '../../config/firestore';
+import { Request, Response, NextFunction } from 'express';
+import { supabaseAdmin as supabase } from '../../config/supabase';
 
-function convertTimestamp(data: any): any {
-  if (!data) return null;
-  const converted: any = { ...data };
-  Object.keys(converted).forEach((key) => {
-    if (converted[key] && typeof converted[key] === 'object' && converted[key].toDate) {
-      converted[key] = converted[key].toDate();
-    }
-  });
-  return converted;
-}
-
-function getDateRange(timeRange: string): { start: Date; end: Date } {
+function getDateRange(timeRange: string): { start: string; end: string } {
   const end = new Date();
   let start = new Date();
 
@@ -35,47 +24,51 @@ function getDateRange(timeRange: string): { start: Date; end: Date } {
       break;
   }
 
-  return { start, end };
+  return { start: start.toISOString(), end: end.toISOString() };
 }
 
-function getPreviousDateRange(start: Date, end: Date): { prevStart: Date; prevEnd: Date } {
+function getPreviousDateRange(startStr: string, endStr: string): { prevStart: string; prevEnd: string } {
+  const start = new Date(startStr);
+  const end = new Date(endStr);
   const duration = end.getTime() - start.getTime();
   const prevEnd = new Date(start.getTime());
   const prevStart = new Date(start.getTime() - duration);
-  return { prevStart, prevEnd };
+  return { prevStart: prevStart.toISOString(), prevEnd: prevEnd.toISOString() };
 }
 
-export async function getDashboardStats(req: Request, res: Response): Promise<void> {
+export async function getDashboardStats(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { timeRange = '30days' } = req.query;
     const { start, end } = getDateRange(timeRange as string);
     const { prevStart, prevEnd } = getPreviousDateRange(start, end);
 
     // Current period orders
-    const ordersSnapshot = await db
-      .collection('orders')
-      .where('createdAt', '>=', start)
-      .where('createdAt', '<=', end)
-      .get();
-    const orders = ordersSnapshot.docs.map((doc: any) => convertTimestamp(doc.data()));
+    const { data: orders, error: ordersError } = await supabase
+      .from('orders')
+      .select('*')
+      .gte('created_at', start)
+      .lte('created_at', end);
+
+    if (ordersError) throw ordersError;
 
     // Previous period orders
-    const prevOrdersSnapshot = await db
-      .collection('orders')
-      .where('createdAt', '>=', prevStart)
-      .where('createdAt', '<=', prevEnd)
-      .get();
-    const prevOrders = prevOrdersSnapshot.docs.map((doc: any) => convertTimestamp(doc.data()));
+    const { data: prevOrders, error: prevOrdersError } = await supabase
+      .from('orders')
+      .select('*')
+      .gte('created_at', prevStart)
+      .lte('created_at', prevEnd);
+
+    if (prevOrdersError) throw prevOrdersError;
 
     // Current stats
-    const revenue = orders.reduce((sum: number, order: any) => sum + (order.total || 0), 0);
-    const totalOrders = orders.length;
-    const totalCustomers = new Set(orders.map((o: any) => o.userId)).size;
+    const revenue = (orders || []).reduce((sum: number, order: any) => sum + (order.total || 0), 0);
+    const totalOrders = (orders || []).length;
+    const totalCustomers = new Set((orders || []).map((o: any) => o.user_id)).size;
 
     // Previous stats
-    const prevRevenue = prevOrders.reduce((sum: number, order: any) => sum + (order.total || 0), 0);
-    const prevTotalOrders = prevOrders.length;
-    const prevTotalCustomers = new Set(prevOrders.map((o: any) => o.userId)).size;
+    const prevRevenue = (prevOrders || []).reduce((sum: number, order: any) => sum + (order.total || 0), 0);
+    const prevTotalOrders = (prevOrders || []).length;
+    const prevTotalCustomers = new Set((prevOrders || []).map((o: any) => o.user_id)).size;
 
     // Calculate changes
     const calculateChange = (current: number, prev: number) => {
@@ -87,212 +80,177 @@ export async function getDashboardStats(req: Request, res: Response): Promise<vo
     const ordersChange = calculateChange(totalOrders, prevTotalOrders);
     const customersChange = calculateChange(totalCustomers, prevTotalCustomers);
 
-    // Total products (current only)
-    const productsSnapshot = await db.collection('products').where('status', '==', 'Active').get();
-    const totalProducts = productsSnapshot.size;
-    // For products change, we'd need historical data which we don't track easily here. 
-    // We'll return 0 or estimate based on createdAt if needed, but for now 0.
-    const productsChange = 0;
+    // Total products
+    const { count: totalProducts, error: productsError } = await supabase
+      .from('products')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'Active');
+
+    if (productsError) throw productsError;
 
     res.json({
       success: true,
       data: {
         totalOrders,
+        totalRevenue: revenue,
         totalCustomers,
-        totalProducts,
-        revenue,
-        ordersChange,
-        customersChange,
-        productsChange,
-        revenueChange,
-        timeRange,
+        totalProducts: totalProducts || 0,
+        changes: {
+          revenue: revenueChange,
+          orders: ordersChange,
+          customers: customersChange,
+        },
       },
     });
   } catch (error) {
-    console.error('Error getting dashboard stats:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    next(error);
   }
 }
 
-export async function getRecentOrders(req: Request, res: Response): Promise<void> {
-  try {
-    const { limit = '10' } = req.query;
-    const limitNum = parseInt(limit as string, 10);
-
-    const snapshot = await db
-      .collection('orders')
-      .orderBy('createdAt', 'desc')
-      .limit(limitNum)
-      .get();
-
-    const orders = snapshot.docs.map((doc: any) => ({
-      id: doc.id,
-      ...convertTimestamp(doc.data()),
-    }));
-
-    res.json({ success: true, data: { orders } });
-  } catch (error) {
-    console.error('Error getting recent orders:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-}
-
-export async function getRevenueAnalytics(req: Request, res: Response): Promise<void> {
-  try {
-    const { timeRange = '30days', groupBy = 'day' } = req.query;
-    const { start, end } = getDateRange(timeRange as string);
-
-    const ordersSnapshot = await db
-      .collection('orders')
-      .where('createdAt', '>=', start)
-      .where('createdAt', '<=', end)
-      .get();
-
-    const orders = ordersSnapshot.docs.map((doc: any) => convertTimestamp(doc.data()));
-
-    // Group by time period
-    const revenueByPeriod: Record<string, number> = {};
-    orders.forEach((order: any) => {
-      const date = new Date(order.createdAt);
-      let key: string;
-
-      if (groupBy === 'day') {
-        key = date.toISOString().split('T')[0];
-      } else if (groupBy === 'week') {
-        const week = Math.ceil(date.getDate() / 7);
-        key = `${date.getFullYear()}-W${week}`;
-      } else {
-        key = `${date.getFullYear()}-${date.getMonth() + 1}`;
-      }
-
-      revenueByPeriod[key] = (revenueByPeriod[key] || 0) + order.total;
-    });
-
-    res.json({
-      success: true,
-      data: {
-        revenueByPeriod,
-        totalRevenue: Object.values(revenueByPeriod).reduce((a, b) => a + b, 0),
-        timeRange,
-        groupBy,
-      },
-    });
-  } catch (error) {
-    console.error('Error getting revenue analytics:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-}
-
-export async function getOrderAnalytics(req: Request, res: Response): Promise<void> {
+export async function getRevenueAnalytics(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { timeRange = '30days' } = req.query;
     const { start, end } = getDateRange(timeRange as string);
 
-    const ordersSnapshot = await db
-      .collection('orders')
-      .where('createdAt', '>=', start)
-      .where('createdAt', '<=', end)
-      .get();
+    const { data, error } = await supabase
+      .from('orders')
+      .select('created_at, total')
+      .gte('created_at', start)
+      .lte('created_at', end)
+      .order('created_at', { ascending: true });
 
-    const orders = ordersSnapshot.docs.map((doc: any) => convertTimestamp(doc.data()));
+    if (error) throw error;
 
-    // Count by status
-    const statusCounts: Record<string, number> = {};
-    orders.forEach((order: any) => {
-      statusCounts[order.status] = (statusCounts[order.status] || 0) + 1;
-    });
-
-    res.json({
-      success: true,
-      data: {
-        totalOrders: orders.length,
-        statusCounts,
-        timeRange,
-      },
-    });
+    res.json({ success: true, data });
   } catch (error) {
-    console.error('Error getting order analytics:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    next(error);
   }
 }
 
-export async function getProductAnalytics(req: Request, res: Response): Promise<void> {
+export async function getOrderAnalytics(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const { limit = '10' } = req.query;
-    const limitNum = parseInt(limit as string, 10);
+    const { timeRange = '30days' } = req.query;
+    const { start, end } = getDateRange(timeRange as string);
 
-    // Get all orders to calculate product performance
-    const ordersSnapshot = await db.collection('orders').get();
-    const orders = ordersSnapshot.docs.map((doc: any) => convertTimestamp(doc.data()));
+    const { data, error } = await supabase
+      .from('orders')
+      .select('created_at, status')
+      .gte('created_at', start)
+      .lte('created_at', end)
+      .order('created_at', { ascending: true });
 
-    // Calculate product sales
-    const productSales: Record<string, { name: string; quantity: number; revenue: number }> = {};
-    orders.forEach((order: any) => {
-      order.items?.forEach((item: any) => {
-        if (!productSales[item.productId]) {
-          productSales[item.productId] = {
-            name: item.name,
-            quantity: 0,
-            revenue: 0,
-          };
-        }
-        productSales[item.productId].quantity += item.quantity;
-        productSales[item.productId].revenue += item.total;
-      });
-    });
+    if (error) throw error;
 
-    // Sort by revenue and get top products
-    const topProducts = Object.entries(productSales)
-      .map(([productId, data]) => ({ productId, ...data }))
-      .sort((a, b) => b.revenue - a.revenue)
-      .slice(0, limitNum);
-
-    res.json({
-      success: true,
-      data: topProducts,
-    });
+    res.json({ success: true, data });
   } catch (error) {
-    console.error('Error getting product analytics:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    next(error);
   }
 }
 
-export async function getCustomerAnalytics(_req: Request, res: Response): Promise<void> {
+export async function getProductAnalytics(_req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const usersSnapshot = await db.collection('users').where('role', '==', 'user').get();
-    const totalCustomers = usersSnapshot.size;
+    // This is a simplified version. In a real app, you might use a more complex query or RPC.
+    const { data, error } = await supabase
+      .from('products')
+      .select('name, stock, category, bestseller, featured')
+      .order('stock', { ascending: true });
 
-    const ordersSnapshot = await db.collection('orders').get();
-    const orders = ordersSnapshot.docs.map((doc: any) => convertTimestamp(doc.data()));
+    if (error) throw error;
 
-    // Calculate customer metrics
-    const customerOrders: Record<string, number> = {};
-    const customerRevenue: Record<string, number> = {};
-
-    orders.forEach((order: any) => {
-      customerOrders[order.userId] = (customerOrders[order.userId] || 0) + 1;
-      customerRevenue[order.userId] = (customerRevenue[order.userId] || 0) + order.total;
-    });
-
-    const activeCustomers = Object.keys(customerOrders).length;
-    const averageOrdersPerCustomer = activeCustomers > 0 ? orders.length / activeCustomers : 0;
-    const averageRevenuePerCustomer =
-      activeCustomers > 0
-        ? Object.values(customerRevenue).reduce((a, b) => a + b, 0) / activeCustomers
-        : 0;
-
-    res.json({
-      success: true,
-      data: {
-        totalCustomers,
-        activeCustomers,
-        averageOrdersPerCustomer,
-        averageRevenuePerCustomer,
-      },
-    });
+    res.json({ success: true, data });
   } catch (error) {
-    console.error('Error getting customer analytics:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    next(error);
   }
 }
 
+export async function getCustomerAnalytics(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .select('created_at, role, status')
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getRecentOrders(_req: Request, res: Response): Promise<void> {
+  try {
+    const { data: orders, error } = await supabase
+      .from('orders')
+      .select('*')
+      .order('createdAt', { ascending: false })
+      .limit(10);
+
+    if (error) throw error;
+
+    res.json({ success: true, data: orders });
+  } catch (error) {
+    console.error('Error getting recent orders:', error);
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+}
+
+export async function getRevenueStats(req: Request, res: Response): Promise<void> {
+  try {
+    const { timeRange = '7days' } = req.query;
+    const { start, end } = getDateRange(timeRange as string);
+
+    const { data: orders, error } = await supabase
+      .from('orders')
+      .select('total, createdAt')
+      .gte('createdAt', start)
+      .lte('createdAt', end)
+      .order('createdAt', { ascending: true });
+
+    if (error) throw error;
+
+    // Group by date
+    const stats: Record<string, number> = {};
+    (orders || []).forEach((order: any) => {
+      const date = new Date(order.createdAt).toISOString().split('T')[0];
+      stats[date] = (stats[date] || 0) + (order.total || 0);
+    });
+
+    const formattedData = Object.entries(stats).map(([date, amount]) => ({
+      date,
+      amount,
+    }));
+
+    res.json({ success: true, data: formattedData });
+  } catch (error) {
+    console.error('Error getting revenue stats:', error);
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+}
+
+export async function getCategoryStats(_req: Request, res: Response): Promise<void> {
+  try {
+    const { data: products, error } = await supabase
+      .from('products')
+      .select('category');
+
+    if (error) throw error;
+
+    const stats: Record<string, number> = {};
+    (products || []).forEach((p: any) => {
+      if (p.category) {
+        stats[p.category] = (stats[p.category] || 0) + 1;
+      }
+    });
+
+    const formattedData = Object.entries(stats).map(([name, value]) => ({
+      name,
+      value,
+    }));
+
+    res.json({ success: true, data: formattedData });
+  } catch (error) {
+    console.error('Error getting category stats:', error);
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+}

@@ -1,171 +1,130 @@
 import { Request, Response } from 'express';
-import { db } from '../../config/firestore';
-import { Coupon } from '../../types';
-
-function convertTimestamp(data: any): any {
-    if (!data) return null;
-    const converted: any = { ...data };
-    Object.keys(converted).forEach((key) => {
-        if (converted[key] && typeof converted[key] === 'object' && converted[key].toDate) {
-            converted[key] = converted[key].toDate();
-        }
-    });
-    return converted;
-}
+import { supabase } from '../../config/supabase';
 
 export async function getCoupons(req: Request, res: Response): Promise<void> {
     try {
         const { page = '1', limit = '20', status, search } = req.query;
         const pageNum = parseInt(page as string, 10);
         const limitNum = parseInt(limit as string, 10);
-        const skip = (pageNum - 1) * limitNum;
+        const from = (pageNum - 1) * limitNum;
+        const to = from + limitNum - 1;
 
-        let query = db.collection('coupons') as any;
+        let query = supabase.from('coupons').select('*', { count: 'exact' });
 
         if (status) {
-            query = query.where('status', '==', status);
+            query = query.eq('status', status);
         }
-
-        const snapshot = await query.get();
-        let coupons = snapshot.docs.map((doc: any) => ({
-            id: doc.id,
-            ...convertTimestamp(doc.data()),
-        })) as Coupon[];
 
         if (search) {
-            const searchLower = (search as string).toLowerCase();
-            coupons = coupons.filter(
-                (c) =>
-                    c.code.toLowerCase().includes(searchLower) ||
-                    c.name.toLowerCase().includes(searchLower)
-            );
+            query = query.or(`code.ilike.%${search}%,name.ilike.%${search}%`);
         }
 
-        // Sort by createdAt desc
-        coupons.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+        query = query.order('createdAt', { ascending: false });
+        query = query.range(from, to);
 
-        const paginatedCoupons = coupons.slice(skip, skip + limitNum);
+        const { data: coupons, error, count } = await query;
+
+        if (error) throw error;
 
         res.json({
             success: true,
-            data: paginatedCoupons,
+            data: coupons,
             pagination: {
                 page: pageNum,
                 limit: limitNum,
-                total: coupons.length,
-                totalPages: Math.ceil(coupons.length / limitNum),
+                total: count || 0,
+                totalPages: Math.ceil((count || 0) / limitNum),
             },
         });
     } catch (error) {
         console.error('Error getting coupons:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 }
 
 export async function getCouponById(req: Request, res: Response): Promise<void> {
     try {
         const { id } = req.params;
-        const doc = await db.collection('coupons').doc(id).get();
+        const { data: coupon, error } = await supabase
+            .from('coupons')
+            .select('*')
+            .eq('id', id)
+            .single();
 
-        if (!doc.exists) {
-            res.status(404).json({ error: 'Coupon not found' });
+        if (error || !coupon) {
+            res.status(404).json({ success: false, error: 'Coupon not found' });
             return;
         }
-
-        const coupon = {
-            id: doc.id,
-            ...convertTimestamp(doc.data()),
-        };
 
         res.json({ success: true, data: coupon });
     } catch (error) {
         console.error('Error getting coupon:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 }
 
 export async function createCoupon(req: Request, res: Response): Promise<void> {
     try {
-        const {
-            code,
-            name,
-            type,
-            value,
-            minPurchase,
-            maxDiscount,
-            usageLimit,
-            validFrom,
-            validUntil,
-            status = 'active',
-        } = req.body;
+        const couponData = req.body;
 
-        // Check if code exists
-        const existing = await db.collection('coupons').where('code', '==', code).get();
-        if (!existing.empty) {
-            res.status(400).json({ error: 'Coupon code already exists' });
-            return;
-        }
+        const { data: coupon, error } = await supabase
+            .from('coupons')
+            .insert({
+                ...couponData,
+                status: couponData.status || 'active',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+            })
+            .select()
+            .single();
 
-        const newCoupon = {
-            code,
-            name,
-            type,
-            value,
-            minPurchase,
-            maxDiscount,
-            usageLimit,
-            usedCount: 0,
-            validFrom: new Date(validFrom),
-            validUntil: new Date(validUntil),
-            status,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-        };
+        if (error) throw error;
 
-        const docRef = await db.collection('coupons').add(newCoupon);
-
-        res.status(201).json({
-            success: true,
-            data: { id: docRef.id, ...newCoupon },
-        });
+        res.status(201).json({ success: true, data: coupon });
     } catch (error) {
         console.error('Error creating coupon:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 }
 
 export async function updateCoupon(req: Request, res: Response): Promise<void> {
     try {
         const { id } = req.params;
-        const updates = req.body;
+        const couponData = req.body;
 
-        // Handle date conversions
-        if (updates.validFrom) updates.validFrom = new Date(updates.validFrom);
-        if (updates.validUntil) updates.validUntil = new Date(updates.validUntil);
+        const { data: coupon, error } = await supabase
+            .from('coupons')
+            .update({
+                ...couponData,
+                updatedAt: new Date().toISOString(),
+            })
+            .eq('id', id)
+            .select()
+            .single();
 
-        updates.updatedAt = new Date();
+        if (error) throw error;
 
-        await db.collection('coupons').doc(id).update(updates);
-
-        const updatedDoc = await db.collection('coupons').doc(id).get();
-
-        res.json({
-            success: true,
-            data: { id: updatedDoc.id, ...convertTimestamp(updatedDoc.data()) },
-        });
+        res.json({ success: true, data: coupon });
     } catch (error) {
         console.error('Error updating coupon:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 }
 
 export async function deleteCoupon(req: Request, res: Response): Promise<void> {
     try {
         const { id } = req.params;
-        await db.collection('coupons').doc(id).delete();
-        res.json({ success: true, message: 'Coupon deleted' });
+
+        const { error } = await supabase
+            .from('coupons')
+            .delete()
+            .eq('id', id);
+
+        if (error) throw error;
+
+        res.json({ success: true, message: 'Coupon deleted successfully' });
     } catch (error) {
         console.error('Error deleting coupon:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 }

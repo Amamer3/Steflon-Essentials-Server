@@ -1,141 +1,128 @@
-import { Request, Response } from 'express';
-import { db } from '../config/firestore';
-import { WishlistItem } from '../types';
+import { Request, Response, NextFunction } from 'express';
+import { supabaseAdmin as supabase } from '../config/supabase';
 
-function convertTimestamp(data: any): any {
-  if (!data) return null;
-  const converted: any = { ...data };
-  Object.keys(converted).forEach((key) => {
-    if (converted[key] && typeof converted[key] === 'object' && converted[key].toDate) {
-      converted[key] = converted[key].toDate();
-    }
-  });
-  return converted;
-}
-
-export async function getWishlist(req: Request, res: Response): Promise<void> {
+export async function getWishlist(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const userId = req.user!.id;
-    const snapshot = await db.collection('wishlist').where('userId', '==', userId).get();
+    const { data: items, error } = await supabase
+      .from('wishlist')
+      .select('*')
+      .eq('user_id', userId);
 
-    const items = await Promise.all(
-      snapshot.docs.map(async (doc: any) => {
-        const itemData = convertTimestamp(doc.data());
-        const item: WishlistItem = {
-          id: doc.id,
-          ...itemData,
-        } as WishlistItem;
+    if (error) throw error;
 
+    const populatedItems = await Promise.all(
+      (items || []).map(async (item: any) => {
         // Populate product
-        if (item.productId) {
-          const productDoc = await db.collection('products').doc(item.productId).get();
-          if (productDoc.exists) {
-            item.product = {
-              id: productDoc.id,
-              ...convertTimestamp(productDoc.data()),
-            } as any;
+        if (item.product_id) {
+          const { data: product } = await supabase
+            .from('products')
+            .select('*')
+            .eq('id', item.product_id)
+            .single();
+          if (product) {
+            item.product = product;
           }
         }
-
         return item;
       })
     );
 
-    res.json({ success: true, data: items });
+    res.json({ success: true, data: populatedItems });
   } catch (error) {
-    console.error('Error getting wishlist:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    next(error);
   }
 }
 
-export async function addToWishlist(req: Request, res: Response): Promise<void> {
+export async function addToWishlist(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const userId = req.user!.id;
     const { productId } = req.body;
 
     if (!productId) {
-      res.status(400).json({ error: 'Product ID is required' });
+      res.status(400).json({ success: false, error: 'Product ID is required' });
       return;
     }
 
     // Check if product exists
-    const productDoc = await db.collection('products').doc(productId).get();
-    if (!productDoc.exists) {
-      res.status(404).json({ error: 'Product not found' });
+    const { data: product, error: pError } = await supabase
+      .from('products')
+      .select('id')
+      .eq('id', productId)
+      .single();
+
+    if (pError || !product) {
+      res.status(404).json({ success: false, error: 'Product not found' });
       return;
     }
 
     // Check if already in wishlist
-    const existingSnapshot = await db
-      .collection('wishlist')
-      .where('userId', '==', userId)
-      .where('productId', '==', productId)
-      .limit(1)
-      .get();
+    const { data: existing } = await supabase
+      .from('wishlist')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('product_id', productId)
+      .maybeSingle();
 
-    if (!existingSnapshot.empty) {
-      res.status(400).json({ error: 'Product already in wishlist' });
+    if (existing) {
+      res.status(400).json({ success: false, error: 'Product already in wishlist' });
       return;
     }
 
     // Add to wishlist
-    const wishlistItem: Omit<WishlistItem, 'id'> = {
-      userId,
-      productId,
-      addedAt: new Date(),
-    };
+    const { data: newItem, error: iError } = await supabase
+      .from('wishlist')
+      .insert({
+        user_id: userId,
+        product_id: productId,
+        // added_at is handled by DB default now()
+      })
+      .select()
+      .single();
 
-    const docRef = await db.collection('wishlist').add(wishlistItem);
-    const newItem = { id: docRef.id, ...wishlistItem } as WishlistItem;
+    if (iError) throw iError;
 
     res.json({ success: true, data: newItem });
   } catch (error) {
-    console.error('Error adding to wishlist:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    next(error);
   }
 }
 
-export async function removeFromWishlist(req: Request, res: Response): Promise<void> {
+export async function removeFromWishlist(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const userId = req.user!.id;
     const { productId } = req.params;
 
-    const snapshot = await db
-      .collection('wishlist')
-      .where('userId', '==', userId)
-      .where('productId', '==', productId)
-      .limit(1)
-      .get();
+    const { error } = await supabase
+      .from('wishlist')
+      .delete()
+      .eq('user_id', userId)
+      .eq('product_id', productId);
 
-    if (snapshot.empty) {
-      res.status(404).json({ error: 'Wishlist item not found' });
-      return;
-    }
+    if (error) throw error;
 
-    await snapshot.docs[0].ref.delete();
-    res.json({ success: true, message: 'Item removed from wishlist' });
+    res.json({ success: true, message: 'Removed from wishlist successfully' });
   } catch (error) {
-    console.error('Error removing from wishlist:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    next(error);
   }
 }
 
-export async function checkWishlist(req: Request, res: Response): Promise<void> {
+export async function checkWishlist(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const userId = req.user!.id;
     const { productId } = req.params;
 
-    const snapshot = await db
-      .collection('wishlist')
-      .where('userId', '==', userId)
-      .where('productId', '==', productId)
-      .limit(1)
-      .get();
+    const { data, error } = await supabase
+      .from('wishlist')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('product_id', productId)
+      .maybeSingle();
 
-    res.json({ success: true, data: { inWishlist: !snapshot.empty } });
+    if (error) throw error;
+
+    res.json({ success: true, isInWishlist: !!data });
   } catch (error) {
-    console.error('Error checking wishlist:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    next(error);
   }
 }
-

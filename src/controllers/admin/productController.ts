@@ -1,186 +1,172 @@
-import { Request, Response } from 'express';
-import { db } from '../../config/firestore';
-import { Product } from '../../types';
+import { Request, Response, NextFunction } from 'express';
+import { supabaseAdmin as supabase } from '../../config/supabase';
 
-function convertTimestamp(data: any): any {
-  if (!data) return null;
-  const converted: any = { ...data };
-  Object.keys(converted).forEach((key) => {
-    if (converted[key] && typeof converted[key] === 'object' && converted[key].toDate) {
-      converted[key] = converted[key].toDate();
-    }
-  });
-  return converted;
-}
-
-export async function getAdminProducts(req: Request, res: Response): Promise<void> {
+export async function getAdminProducts(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { page = '1', limit = '20', category, status, search } = req.query;
     const pageNum = parseInt(page as string, 10);
     const limitNum = parseInt(limit as string, 10);
+    const from = (pageNum - 1) * limitNum;
+    const to = from + limitNum - 1;
 
-    let query = db.collection('products') as any;
+    let query = supabase.from('products').select('*', { count: 'exact' });
 
     if (category) {
-      query = query.where('category', '==', category);
+      query = query.eq('category', category);
     }
     if (status) {
-      query = query.where('status', '==', status);
+      query = query.eq('status', status);
     }
-
-    const snapshot = await query.orderBy('createdAt', 'desc').get();
-    let products = snapshot.docs.map((doc: any) => ({
-      id: doc.id,
-      ...convertTimestamp(doc.data()),
-    })) as Product[];
 
     if (search) {
-      const searchLower = (search as string).toLowerCase();
-      products = products.filter(
-        (p) =>
-          p.name.toLowerCase().includes(searchLower) ||
-          p.description?.toLowerCase().includes(searchLower) ||
-          p.sku?.toLowerCase().includes(searchLower)
-      );
+      query = query.or(`name.ilike.%${search}%,description.ilike.%${search}%,sku.ilike.%${search}%`);
     }
 
-    const total = products.length;
-    const paginatedProducts = products.slice((pageNum - 1) * limitNum, pageNum * limitNum);
+    query = query.order('created_at', { ascending: false });
+    query = query.range(from, to);
+
+    const { data: products, error, count } = await query;
+
+    if (error) throw error;
 
     res.json({
       success: true,
-      data: paginatedProducts,
+      data: products,
       pagination: {
         page: pageNum,
         limit: limitNum,
-        total,
-        totalPages: Math.ceil(total / limitNum),
+        total: count || 0,
+        totalPages: Math.ceil((count || 0) / limitNum),
       },
     });
   } catch (error) {
-    console.error('Error getting admin products:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    next(error);
   }
 }
 
-export async function getAdminProductById(req: Request, res: Response): Promise<void> {
+export async function getAdminProductById(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { id } = req.params;
-    const doc = await db.collection('products').doc(id).get();
+    const { data: product, error } = await supabase
+      .from('products')
+      .select('*')
+      .eq('id', id)
+      .single();
 
-    if (!doc.exists) {
-      res.status(404).json({ error: 'Product not found' });
+    if (error || !product) {
+      res.status(404).json({ success: false, error: 'Product not found' });
       return;
     }
 
-    const product = { id: doc.id, ...convertTimestamp(doc.data()) } as Product;
     res.json({ success: true, data: product });
   } catch (error) {
-    console.error('Error getting admin product:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    next(error);
   }
 }
 
-export async function createProduct(req: Request, res: Response): Promise<void> {
+export async function createProduct(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const productData = req.body;
 
-    const newProduct: Omit<Product, 'id'> = {
+    const newProduct = {
       ...productData,
       status: productData.status || 'Active',
       featured: productData.featured || false,
       bestseller: productData.bestseller || false,
       stock: productData.stock || 0,
       images: productData.images || [],
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      // created_at and updated_at are handled by the database triggers
     };
 
-    const docRef = await db.collection('products').add(newProduct);
-    res.json({ success: true, data: { id: docRef.id, ...newProduct } });
+    // Remove camelCase versions if they exist to avoid DB errors
+    delete newProduct.createdAt;
+    delete newProduct.updatedAt;
+
+    const { data: product, error } = await supabase
+      .from('products')
+      .insert(newProduct)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.json({ success: true, data: product });
   } catch (error) {
-    console.error('Error creating product:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    next(error);
   }
 }
 
-export async function updateProduct(req: Request, res: Response): Promise<void> {
+export async function updateProduct(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { id } = req.params;
-    const updateData = req.body;
+    const productData = req.body;
 
-    delete updateData.id;
-    delete updateData.createdAt;
+    // Remove camelCase versions if they exist
+    delete productData.createdAt;
+    delete productData.updatedAt;
 
-    const productDoc = await db.collection('products').doc(id);
-    await productDoc.update({
-      ...updateData,
-      updatedAt: new Date(),
-    });
+    const { data: product, error } = await supabase
+      .from('products')
+      .update(productData)
+      .eq('id', id)
+      .select()
+      .single();
 
-    const updatedDoc = await productDoc.get();
-    res.json({ success: true, data: { id: updatedDoc.id, ...convertTimestamp(updatedDoc.data()) } });
+    if (error) throw error;
+
+    res.json({ success: true, data: product });
   } catch (error) {
-    console.error('Error updating product:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    next(error);
   }
 }
 
-export async function deleteProduct(req: Request, res: Response): Promise<void> {
+export async function deleteProduct(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { id } = req.params;
-    await db.collection('products').doc(id).update({
-      status: 'Deleted',
-      updatedAt: new Date(),
-    });
-    res.json({ success: true, message: 'Product deleted' });
+
+    const { error } = await supabase
+      .from('products')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+
+    res.json({ success: true, message: 'Product deleted successfully' });
   } catch (error) {
-    console.error('Error deleting product:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    next(error);
   }
 }
 
-export async function updateProductStock(req: Request, res: Response): Promise<void> {
+export async function updateProductStock(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { id } = req.params;
     const { stock } = req.body;
-
-    if (typeof stock !== 'number' || stock < 0) {
-      res.status(400).json({ error: 'Valid stock quantity is required' });
-      return;
-    }
-
-    await db.collection('products').doc(id).update({
-      stock,
-      updatedAt: new Date(),
-    });
-
-    res.json({ success: true, message: 'Stock updated' });
+    const { data: product, error } = await supabase
+      .from('products')
+      .update({ stock })
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    res.json({ success: true, data: product });
   } catch (error) {
-    console.error('Error updating product stock:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    next(error);
   }
 }
 
-export async function updateProductStatus(req: Request, res: Response): Promise<void> {
+export async function updateProductStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { id } = req.params;
     const { status } = req.body;
-
-    if (!['Active', 'Inactive', 'OutOfStock'].includes(status)) {
-      res.status(400).json({ error: 'Invalid status' });
-      return;
-    }
-
-    await db.collection('products').doc(id).update({
-      status,
-      updatedAt: new Date(),
-    });
-
-    res.json({ success: true, message: 'Status updated' });
+    const { data: product, error } = await supabase
+      .from('products')
+      .update({ status })
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    res.json({ success: true, data: product });
   } catch (error) {
-    console.error('Error updating product status:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    next(error);
   }
 }
-

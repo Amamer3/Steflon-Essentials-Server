@@ -1,86 +1,104 @@
-import { Request, Response } from 'express';
-import { db } from '../config/firestore';
+import { Request, Response, NextFunction } from 'express';
+import { supabaseAdmin as supabase } from '../config/supabase';
 
-function convertTimestamp(data: any): any {
-  if (!data) return null;
-  const converted: any = { ...data };
-  Object.keys(converted).forEach((key) => {
-    if (converted[key] && typeof converted[key] === 'object' && converted[key].toDate) {
-      converted[key] = converted[key].toDate();
-    }
-  });
-  return converted;
-}
-
-export async function getUserProfile(req: Request, res: Response): Promise<void> {
+export async function getUserProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const userId = req.user!.id;
-    const userDoc = await db.collection('users').doc(userId).get();
+    const { data: userData, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', userId)
+      .single();
 
-    if (!userDoc.exists) {
-      res.status(404).json({ error: 'User not found' });
+    if (error) {
+      if (error.code === 'PGRST116') {
+        // User not found in 'users' table, return info from auth user
+        res.json({
+          success: true,
+          data: {
+            id: userId,
+            email: req.user!.email,
+            name: req.user!.name || '',
+            role: req.user!.role || 'user',
+          },
+        });
+        return;
+      }
+      throw error;
+    }
+
+    const { password, ...profile } = userData as any;
+
+    res.json({ success: true, data: { id: userId, ...profile } });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function updateUserProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const userId = req.user!.id;
+    const body = req.body;
+
+    // Only allow specific fields to be updated in the database
+    // This prevents errors like "Could not find the 'currency' column"
+    const updateData: any = {};
+    
+    if (body.name !== undefined) updateData.name = body.name;
+    if (body.phone !== undefined) updateData.phone = body.phone;
+    if (body.currency !== undefined) updateData.currency = body.currency;
+    
+    // Check if body has other fields that exist in our schema
+    // Note: status, role, email, id should not be updated by the user directly here
+
+    if (Object.keys(updateData).length === 0) {
+      res.json({ success: true, message: 'No valid fields to update' });
       return;
     }
 
-    const userData = convertTimestamp(userDoc.data());
-    const { password, ...profile } = userData as any;
+    const { data: updatedData, error } = await supabase
+      .from('users')
+      .update(updateData)
+      .eq('id', userId)
+      .select()
+      .single();
 
-    res.json({ success: true, data: { id: userDoc.id, ...profile } });
+    if (error) throw error;
+
+    const { password, ...profile } = updatedData as any;
+
+    res.json({ success: true, data: { id: userId, ...profile } });
   } catch (error) {
-    console.error('Error getting user profile:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    next(error);
   }
 }
 
-export async function updateUserProfile(req: Request, res: Response): Promise<void> {
+export async function changePassword(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const userId = req.user!.id;
-    const updateData = req.body;
+    const { newPassword } = req.body;
 
-    // Remove fields that shouldn't be updated directly
-    delete updateData.id;
-    delete updateData.email;
-    delete updateData.role;
-    delete updateData.password;
-
-    const userDoc = await db.collection('users').doc(userId);
-    await userDoc.update({
-      ...updateData,
-      updatedAt: new Date(),
-    });
-
-    const updatedDoc = await userDoc.get();
-    const userData = convertTimestamp(updatedDoc.data());
-    const { password, ...profile } = userData as any;
-
-    res.json({ success: true, data: { id: updatedDoc.id, ...profile } });
-  } catch (error) {
-    console.error('Error updating user profile:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-}
-
-export async function changePassword(req: Request, res: Response): Promise<void> {
-  try {
-
-    const { currentPassword, newPassword } = req.body;
-
-    if (!currentPassword || !newPassword) {
-      res.status(400).json({ error: 'Current password and new password are required' });
+    if (!newPassword) {
+      res.status(400).json({ success: false, error: 'New password is required' });
       return;
     }
 
     if (newPassword.length < 8) {
-      res.status(400).json({ error: 'New password must be at least 8 characters' });
+      res.status(400).json({ success: false, error: 'New password must be at least 8 characters' });
       return;
     }
 
-    // BetterAuth handles password changes through its own endpoints
-    // This is a placeholder - you may need to integrate with BetterAuth's password change API
-    res.json({ success: true, message: 'Password change initiated. Please use BetterAuth password change endpoint.' });
+    // Supabase handles password updates via the auth API
+    const { error } = await supabase.auth.updateUser({
+      password: newPassword
+    });
+
+    if (error) {
+      res.status(400).json({ success: false, error: error.message });
+      return;
+    }
+
+    res.json({ success: true, message: 'Password updated successfully' });
   } catch (error) {
-    console.error('Error changing password:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    next(error);
   }
 }
-

@@ -17,7 +17,7 @@ declare global {
 }
 
 /**
- * Middleware to authenticate user via BetterAuth session
+ * Middleware to authenticate user via Supabase session
  */
 export async function authenticateUser(
   req: Request,

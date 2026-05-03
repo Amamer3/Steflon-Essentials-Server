@@ -1,17 +1,6 @@
 import { Request, Response } from 'express';
-import { db } from '../config/firestore';
-import { Order, OrderItem } from '../types';
-
-function convertTimestamp(data: any): any {
-  if (!data) return null;
-  const converted: any = { ...data };
-  Object.keys(converted).forEach((key) => {
-    if (converted[key] && typeof converted[key] === 'object' && converted[key].toDate) {
-      converted[key] = converted[key].toDate();
-    }
-  });
-  return converted;
-}
+import { supabaseAdmin as supabase } from '../config/supabase';
+import { OrderItem } from '../types';
 
 function generateOrderNumber(): string {
   return `ORD-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
@@ -23,54 +12,67 @@ export async function createOrder(req: Request, res: Response): Promise<void> {
     const { shippingAddressId, billingAddressId, paymentMethod } = req.body;
 
     // Get cart
-    const cartDoc = await db.collection('carts').doc(userId).get();
-    if (!cartDoc.exists) {
-      res.status(404).json({ error: 'Cart not found' });
-      return;
-    }
+    const { data: cart, error: cartError } = await supabase
+      .from('carts')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
 
-    const cart = convertTimestamp(cartDoc.data());
-    if (!cart.items || cart.items.length === 0) {
-      res.status(400).json({ error: 'Cart is empty' });
+    if (cartError || !cart || !cart.items || cart.items.length === 0) {
+      res.status(400).json({ success: false, error: 'Cart is empty or not found' });
       return;
     }
 
     // Get addresses
-    const shippingAddressDoc = await db.collection('addresses').doc(shippingAddressId).get();
-    if (!shippingAddressDoc.exists) {
-      res.status(404).json({ error: 'Shipping address not found' });
+    const { data: shippingAddress, error: sAddrError } = await supabase
+      .from('addresses')
+      .select('*')
+      .eq('id', shippingAddressId)
+      .single();
+
+    if (sAddrError || !shippingAddress) {
+      res.status(404).json({ success: false, error: 'Shipping address not found' });
       return;
     }
 
     let billingAddress = null;
     if (billingAddressId) {
-      const billingAddressDoc = await db.collection('addresses').doc(billingAddressId).get();
-      if (billingAddressDoc.exists) {
-        billingAddress = convertTimestamp(billingAddressDoc.data());
-      }
+      const { data: bAddr } = await supabase
+        .from('addresses')
+        .select('*')
+        .eq('id', billingAddressId)
+        .single();
+      billingAddress = bAddr;
     }
 
     // Build order items and verify stock
     const orderItems: OrderItem[] = [];
     for (const cartItem of cart.items) {
-      const productDoc = await db.collection('products').doc(cartItem.productId).get();
-      if (!productDoc.exists) {
-        res.status(404).json({ error: `Product ${cartItem.productId} not found` });
+      const { data: product, error: pError } = await supabase
+        .from('products')
+        .select('*')
+        .eq('id', cartItem.productId)
+        .single();
+
+      if (pError || !product) {
+        res.status(404).json({ success: false, error: `Product ${cartItem.productId} not found` });
         return;
       }
 
-      const product = convertTimestamp(productDoc.data());
       if (product.stock < cartItem.quantity) {
-        res.status(400).json({ error: `Insufficient stock for ${product.name}` });
+        res.status(400).json({ success: false, error: `Insufficient stock for ${product.name}` });
         return;
       }
+
+      // In a real app, you'd use the current price from the product table
+      const price = product.price;
 
       orderItems.push({
         productId: cartItem.productId,
         name: product.name,
-        price: cartItem.price,
+        price: price,
         quantity: cartItem.quantity,
-        total: cartItem.price * cartItem.quantity,
+        total: price * cartItem.quantity,
       });
     }
 
@@ -81,89 +83,74 @@ export async function createOrder(req: Request, res: Response): Promise<void> {
     const total = subtotal + shipping + tax;
 
     // Create order
-    const order: Omit<Order, 'id'> = {
-      orderNumber: generateOrderNumber(),
-      userId,
+    const orderData: any = {
+      order_number: generateOrderNumber(),
+      user_id: userId,
       items: orderItems,
       subtotal,
       shipping,
       tax,
       total,
       status: 'Pending',
-      shippingAddress: convertTimestamp(shippingAddressDoc.data()),
-      billingAddress: billingAddress ? convertTimestamp(billingAddress) : undefined,
-      paymentMethod: paymentMethod || 'Credit Card',
-      paymentStatus: 'Pending',
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      shipping_address: shippingAddress,
+      billing_address: billingAddress || shippingAddress,
+      payment_method: paymentMethod || 'Credit Card',
+      payment_status: 'Pending',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     };
 
-    const orderRef = await db.collection('orders').add(order);
+    const { data: order, error: orderError } = await supabase
+      .from('orders')
+      .insert(orderData)
+      .select()
+      .single();
 
-    // Update product stock
-    const batch = db.batch();
+    if (orderError) throw orderError;
+
+    // Update product stock and clear cart
     for (const item of orderItems) {
-      const productRef = db.collection('products').doc(item.productId);
-      const productDoc = await productRef.get();
-      if (productDoc.exists) {
-        const product = convertTimestamp(productDoc.data());
-        batch.update(productRef, { stock: product.stock - item.quantity });
+      const { data: product } = await supabase
+        .from('products')
+        .select('stock')
+        .eq('id', item.productId)
+        .single();
+        
+      if (product) {
+        await supabase
+          .from('products')
+          .update({ stock: product.stock - item.quantity })
+          .eq('id', item.productId);
       }
     }
-    await batch.commit();
 
-    // Clear cart
-    await db.collection('carts').doc(userId).set({
-      userId,
-      items: [],
-      total: 0,
-      updatedAt: new Date(),
-    });
+    await supabase
+      .from('carts')
+      .update({ items: [], total: 0, updated_at: new Date().toISOString() })
+      .eq('user_id', userId);
 
-    res.json({ success: true, data: { id: orderRef.id, ...order } });
+    res.status(201).json({ success: true, data: order });
   } catch (error) {
     console.error('Error creating order:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 }
 
-export async function getOrders(req: Request, res: Response): Promise<void> {
+export async function getMyOrders(req: Request, res: Response): Promise<void> {
   try {
     const userId = req.user!.id;
-    const { page = '1', limit = '10', status } = req.query;
+    const { data: orders, error } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
 
-    const pageNum = parseInt(page as string, 10);
-    const limitNum = parseInt(limit as string, 10);
+    if (error) throw error;
 
-    let query = db.collection('orders').where('userId', '==', userId) as any;
-
-    if (status) {
-      query = query.where('status', '==', status);
-    }
-
-    const snapshot = await query.orderBy('createdAt', 'desc').get();
-    const total = snapshot.size;
-
-    const orders = snapshot.docs
-      .slice((pageNum - 1) * limitNum, pageNum * limitNum)
-      .map((doc: any) => ({
-        id: doc.id,
-        ...convertTimestamp(doc.data()),
-      })) as Order[];
-
-    res.json({
-      success: true,
-      data: orders,
-      pagination: {
-        page: pageNum,
-        limit: limitNum,
-        total,
-        totalPages: Math.ceil(total / limitNum),
-      },
-    });
+    res.json({ success: true, data: orders });
   } catch (error) {
     console.error('Error getting orders:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 }
 
@@ -172,22 +159,40 @@ export async function getOrderById(req: Request, res: Response): Promise<void> {
     const userId = req.user!.id;
     const { id } = req.params;
 
-    const orderDoc = await db.collection('orders').doc(id).get();
-    if (!orderDoc.exists) {
-      res.status(404).json({ error: 'Order not found' });
+    const { data: order, error } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('id', id)
+      .eq('user_id', userId)
+      .single();
+
+    if (error || !order) {
+      res.status(404).json({ success: false, error: 'Order not found' });
       return;
     }
 
-    const order = convertTimestamp(orderDoc.data());
-    if (order.userId !== userId) {
-      res.status(403).json({ error: 'Forbidden' });
-      return;
-    }
-
-    res.json({ success: true, data: { id: orderDoc.id, ...order } });
+    res.json({ success: true, data: order });
   } catch (error) {
     console.error('Error getting order:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+}
+
+export async function getOrders(req: Request, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.id;
+    const { data: orders, error } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    res.json({ success: true, data: orders });
+  } catch (error) {
+    console.error('Error getting user orders:', error);
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 }
 
@@ -196,47 +201,20 @@ export async function cancelOrder(req: Request, res: Response): Promise<void> {
     const userId = req.user!.id;
     const { id } = req.params;
 
-    const orderDoc = await db.collection('orders').doc(id);
-    const orderSnapshot = await orderDoc.get();
+    const { data: order, error } = await supabase
+      .from('orders')
+      .update({ status: 'Cancelled', updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('user_id', userId)
+      .select()
+      .single();
 
-    if (!orderSnapshot.exists) {
-      res.status(404).json({ error: 'Order not found' });
-      return;
-    }
+    if (error) throw error;
 
-    const order = convertTimestamp(orderSnapshot.data());
-    if (order.userId !== userId) {
-      res.status(403).json({ error: 'Forbidden' });
-      return;
-    }
-
-    if (order.status === 'Cancelled' || order.status === 'Delivered') {
-      res.status(400).json({ error: 'Order cannot be cancelled' });
-      return;
-    }
-
-    // Restore stock
-    const batch = db.batch();
-    for (const item of order.items) {
-      const productRef = db.collection('products').doc(item.productId);
-      const productDoc = await productRef.get();
-      if (productDoc.exists) {
-        const product = convertTimestamp(productDoc.data());
-        batch.update(productRef, { stock: product.stock + item.quantity });
-      }
-    }
-    await batch.commit();
-
-    // Update order status
-    await orderDoc.update({
-      status: 'Cancelled',
-      updatedAt: new Date(),
-    });
-
-    res.json({ success: true, message: 'Order cancelled' });
+    res.json({ success: true, data: order });
   } catch (error) {
     console.error('Error cancelling order:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 }
 
@@ -245,56 +223,51 @@ export async function reorderItems(req: Request, res: Response): Promise<void> {
     const userId = req.user!.id;
     const { id } = req.params;
 
-    const orderDoc = await db.collection('orders').doc(id).get();
-    if (!orderDoc.exists) {
-      res.status(404).json({ error: 'Order not found' });
+    const { data: order, error } = await supabase
+      .from('orders')
+      .select('items')
+      .eq('id', id)
+      .eq('user_id', userId)
+      .single();
+
+    if (error || !order) {
+      res.status(404).json({ success: false, error: 'Order not found' });
       return;
     }
 
-    const order = convertTimestamp(orderDoc.data());
-    if (order.userId !== userId) {
-      res.status(403).json({ error: 'Forbidden' });
-      return;
-    }
+    // Add items back to cart
+    const { data: cart } = await supabase
+      .from('carts')
+      .select('items')
+      .eq('user_id', userId)
+      .single();
 
-    // Add items to cart
-    const cartDoc = await db.collection('carts').doc(userId);
-    const cartSnapshot = await cartDoc.get();
+    const currentItems = cart?.items || [];
+    const newItems = [...currentItems];
 
-    let cart: any;
-    if (!cartSnapshot.exists) {
-      cart = { userId, items: [], total: 0, updatedAt: new Date() };
-    } else {
-      cart = convertTimestamp(cartSnapshot.data());
-    }
-
-    // Add order items to cart
-    for (const orderItem of order.items) {
-      const existingIndex = cart.items.findIndex(
-        (item: any) => item.productId === orderItem.productId
-      );
-
-      if (existingIndex >= 0) {
-        cart.items[existingIndex].quantity += orderItem.quantity;
+    for (const item of order.items) {
+      const existing = newItems.find((i: any) => i.productId === item.productId);
+      if (existing) {
+        existing.quantity += item.quantity;
       } else {
-        cart.items.push({
-          id: `${Date.now()}-${Math.random()}`,
-          productId: orderItem.productId,
-          quantity: orderItem.quantity,
-          price: orderItem.price,
-          addedAt: new Date(),
+        newItems.push({
+          productId: item.productId,
+          quantity: item.quantity,
+          price: item.price
         });
       }
     }
 
-    cart.total = cart.items.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0);
-    cart.updatedAt = new Date();
+    const { error: uError } = await supabase
+      .from('carts')
+      .update({ items: newItems, updated_at: new Date().toISOString() })
+      .eq('user_id', userId);
 
-    await cartDoc.set(cart);
-    res.json({ success: true, data: cart });
+    if (uError) throw uError;
+
+    res.json({ success: true, message: 'Items added to cart' });
   } catch (error) {
     console.error('Error reordering items:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 }
-

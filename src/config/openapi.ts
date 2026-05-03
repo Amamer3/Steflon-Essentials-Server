@@ -197,7 +197,7 @@ export const openApiSpec: OpenAPIV3.Document = {
     },
   },
   paths: {
-    // Authentication endpoints (handled by BetterAuth)
+    // Authentication endpoints (handled by Supabase Auth)
     '/auth/sign-up': {
       post: {
         tags: ['Authentication'],
@@ -323,9 +323,9 @@ export const openApiSpec: OpenAPIV3.Document = {
         },
       },
     },
-    '/user/profile': {
+    '/profile': {
       get: {
-        tags: ['Authentication'],
+        tags: ['Profile'],
         summary: 'Get current user profile',
         description: 'Get authenticated user profile information',
         security: [{ bearerAuth: [] }],
@@ -359,7 +359,7 @@ export const openApiSpec: OpenAPIV3.Document = {
         },
       },
       put: {
-        tags: ['Authentication'],
+        tags: ['Profile'],
         summary: 'Update user profile',
         description: 'Update authenticated user profile information',
         security: [{ bearerAuth: [] }],
@@ -1154,69 +1154,6 @@ export const openApiSpec: OpenAPIV3.Document = {
             content: {
               'application/json': {
                 schema: { $ref: '#/components/schemas/Success' },
-              },
-            },
-          },
-        },
-      },
-    },
-    // Profile endpoints
-    '/profile': {
-      get: {
-        tags: ['Profile'],
-        summary: 'Get user profile',
-        description: 'Get current user profile information',
-        security: [{ bearerAuth: [] }],
-        responses: {
-          '200': {
-            description: 'User profile',
-            content: {
-              'application/json': {
-                schema: {
-                  allOf: [
-                    { $ref: '#/components/schemas/Success' },
-                    {
-                      type: 'object',
-                      properties: {
-                        data: { $ref: '#/components/schemas/User' },
-                      },
-                    },
-                  ],
-                },
-              },
-            },
-          },
-        },
-      },
-      put: {
-        tags: ['Profile'],
-        summary: 'Update user profile',
-        description: 'Update user profile information',
-        security: [{ bearerAuth: [] }],
-        requestBody: {
-          required: true,
-          content: {
-            'application/json': {
-              schema: { $ref: '#/components/schemas/User' },
-            },
-          },
-        },
-        responses: {
-          '200': {
-            description: 'Profile updated',
-            content: {
-              'application/json': {
-                schema: {
-                  allOf: [
-                    { $ref: '#/components/schemas/Success' },
-                    {
-                      type: 'object',
-                      properties: {
-                        data: { $ref: '#/components/schemas/User' },
-                      },
-                    },
-                  ],
-                },
               },
             },
           },
